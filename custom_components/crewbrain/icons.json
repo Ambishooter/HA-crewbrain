@@ -12,7 +12,8 @@
         "state": { "not_clocked_in": "mdi:clock-outline" }
       },
       "worked_today": { "default": "mdi:timer-sand" },
-      "next_job": { "default": "mdi:briefcase-clock" }
+      "next_job": { "default": "mdi:briefcase-clock" },
+      "vacation_left": { "default": "mdi:beach" }
     },
     "switch": {
       "punch_clock": {
@@ -21,7 +22,8 @@
       }
     },
     "calendar": {
-      "jobs": { "default": "mdi:briefcase-variant" }
+      "jobs": { "default": "mdi:briefcase-variant" },
+      "absences": { "default": "mdi:calendar-remove" }
     }
   },
   "services": {

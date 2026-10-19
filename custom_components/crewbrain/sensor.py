@@ -1,4 +1,4 @@
-"""Since when, how long today, and the next job."""
+"""Since when, how long today, the next job, and vacation days left."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .api import Job
-from .coordinator import ClockCoordinator, JobsCoordinator
+from .coordinator import AbsenceCoordinator, ClockCoordinator, JobsCoordinator
 from .entity import CrewBrainEntity
 
 if TYPE_CHECKING:
@@ -27,11 +27,14 @@ NOT_CLOCKED_IN = "not_clocked_in"
 async def async_setup_entry(hass: HomeAssistant, entry: CrewBrainConfigEntry,
                             async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     data = entry.runtime_data
-    async_add_entities([
+    entities: list[SensorEntity] = [
         ClockedInSince(data.clock, entry, "clocked_in_since"),
         WorkedToday(data.clock, entry, "worked_today"),
         NextJob(data.jobs, entry, "next_job"),
-    ])
+    ]
+    if data.absences.offers("account"):
+        entities.append(VacationLeft(data.absences, entry, "vacation_left"))
+    async_add_entities(entities)
 
 
 class ClockedInSince(CrewBrainEntity[ClockCoordinator], SensorEntity):
@@ -85,7 +88,7 @@ class NextJob(CrewBrainEntity[JobsCoordinator], SensorEntity):
     """The start of the next job that is not over yet."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _unrecorded_attributes = frozenset({"description", "upcoming"})
+    _unrecorded_attributes = frozenset({"description", "upcoming", "notes", "remark", "crew"})
 
     def _coming(self) -> list[Job]:
         now = dt_util.utcnow()
@@ -109,5 +112,49 @@ class NextJob(CrewBrainEntity[JobsCoordinator], SensorEntity):
                 place=job.place,
                 description=job.description,
                 status=job.status,
+                activity=job.activity,
+                remark=job.remark,
+                notes=job.notes,
             )
         return attributes
+
+
+class VacationLeft(CrewBrainEntity[AbsenceCoordinator], SensorEntity):
+    """Vacation days left this year. The rest of the account as attributes.
+
+    CrewBrain's own field names, so they can be held against its app.
+    """
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    #: Attribute -> field of `/v2/absenceaccounts`.
+    _FIELDS = {
+        "year": "Year",
+        "entitlement": "YearlyVacationEntitlement",
+        "carryover": "CarryoverFromPreviousYear",
+        "expired_carryover": "ExpiredCarryover",
+        "total": "VacationDays",
+        "approved": "AlreadyApproved",
+        "used": "AlreadyUsed",
+        "requested": "Submitted",
+        "available": "Available",
+    }
+
+    @property
+    def _account(self) -> dict[str, Any] | None:
+        data = self.coordinator.data
+        return data.account if data else None
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._account is not None
+
+    @property
+    def native_value(self) -> float | None:
+        value = (self._account or {}).get("RemainingVacation")
+        return float(value) if value is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        account = self._account or {}
+        return {name: account.get(key) for name, key in self._FIELDS.items()}

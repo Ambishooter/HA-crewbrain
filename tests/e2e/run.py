@@ -248,7 +248,31 @@ def main():
         "5": ("E mine in 20 days", now + 20 * day, now + 20 * day + hour, False),
         "6": ("F mine over", now - 3 * day, now - 2 * day, False),
         "7": ("G mine without an end", now - 10 * minute, None, False),
+        "8": ("H taken off it", now + day + 2 * hour, now + day + 3 * hour, False),
     }
+    crew = {i: [{"ID": 5100 + int(i), "Assignment": "EMPLOYEE",
+                 "AssignmentID": 99 if i == "2" else 42}] for i in events}
+    # My booking on A, with the crew around it; on H my booking was deleted.
+    crew["1"] = [
+        {"ID": 5101, "Assignment": "EMPLOYEE", "AssignmentID": 42, "CategoryID": 400,
+         "Activity": "Aufbau", "Remark": "<p>Bring the long ladder</p>", "Notes": "Gate code at the office"},
+        {"ID": 5201, "Assignment": "EMPLOYEE", "AssignmentID": 7, "Name": "Alex Example"},
+        {"ID": 5202, "Assignment": "SUBCONTRACTOR", "AssignmentID": 8, "Name": "Sam Sub"},
+        {"ID": 5203, "Assignment": "EMPLOYEE", "AssignmentID": 9, "Name": "Gone Person",
+         "Deleted": "20260101T000000Z"},
+        {"ID": 5204, "Assignment": "VEHICLE", "AssignmentID": 3, "Name": "Van 2"},
+    ]
+    crew["8"][0]["Deleted"] = "20260101T000000Z"
+    # Absences: whole days, a half day still requested, and some to leave out.
+    absences = [
+        (50, 1, midnight + 5 * day, midnight + 8 * day - timedelta(seconds=1), True, 42, False, None),
+        (51, 2, midnight, midnight + day, True, 42, False, None),
+        (52, 1, midnight + 2 * day, midnight + 3 * day, True, 99, False, None),
+        (53, 1, midnight + 3 * day, midnight + 4 * day, True, 42, True, None),
+        (54, 3, midnight + day + 8 * hour, midnight + day + 12 * hour, False, 42, False, None),
+        (55, 1, midnight + 4 * day, midnight + 5 * day, True, 42, False, "20260101T000000Z"),
+        (56, 1, midnight + 800 * day, midnight + 801 * day, True, 42, False, None),
+    ]
     # One record today, and one from last night that ran past midnight.
     records = [(900, now - 30 * minute, now - 10 * minute),
                (901, midnight - 60 * minute, midnight + 30 * minute)]
@@ -262,8 +286,18 @@ def main():
                     "ParentTitles": ["Project X"],
                     "Description": "<div>Raum&nbsp;C 201</div><div>Bühne</div>"}
                    for i, (t, a, b, d) in events.items()],
-        "crew": {i: [{"ID": 5100 + int(i), "Assignment": "EMPLOYEE",
-                      "AssignmentID": 99 if i == "2" else 42}] for i in events},
+        "crew": crew,
+        "roles": {"400": "Lighting tech"},
+        "account": {"Year": "2026", "YearlyVacationEntitlement": 30, "CarryoverFromPreviousYear": 3,
+                    "ExpiredCarryover": 0, "VacationDays": 33, "AlreadyApproved": 20.5,
+                    "AlreadyUsed": 18, "Submitted": 1, "RemainingVacation": 12.5, "Available": 11.5},
+        "absence_kinds": [{"ID": 1, "Title": "Vacation", "Account": "VACATION"},
+                          {"ID": 2, "Title": "Sick", "Account": "SICK"},
+                          {"ID": 3, "Title": "Flextime", "Account": "FLEXTIME"}],
+        "absences": [{"ID": i, "CategoryID": k, "From": stamp(a), "Until": stamp(b), "Approved": ok,
+                      "Assignment": "EMPLOYEE", "AssignmentID": who, "CancellationApproved": cancelled,
+                      "Deleted": deleted, "Reason": "Doctor" if i == 54 else ""}
+                     for i, k, a, b, ok, who, cancelled, deleted in absences],
         "clients": {"300": "Example Client"},
         "locations": {"7": ["Hall 3", "Example City"]},
         # Each company has its own IDs; the default is found by kind and order.
@@ -312,7 +346,8 @@ def main():
     e = {k: f"{d}.{p}_{name}" for d, k, name in [
         ("binary_sensor", "clocked_in", "status"), ("sensor", "clocked_in_since", "clocked_in_since"),
         ("sensor", "worked_today", "worked_today"), ("sensor", "next_job", "next_job"),
-        ("switch", "punch_clock", "punch_clock"), ("calendar", "jobs", "jobs")]}
+        ("switch", "punch_clock", "punch_clock"), ("calendar", "jobs", "jobs"),
+        ("sensor", "vacation_left", "vacation_days_left"), ("calendar", "absences", "absences")]}
     print("entities:", sorted(e.values()))
 
     polling_mark = log_mark()
@@ -352,11 +387,15 @@ def main():
     nxt = s[e["next_job"]]
     titles = [j["title"] for j in nxt["attributes"].get("upcoming", [])]
     check("next job is the running one", nxt["attributes"].get("title") == "D mine running", nxt["attributes"].get("title"))
-    check("upcoming: mine only, not over, not deleted, within 14 days, one without an end lasts an hour",
+    check("upcoming: mine only, not over, not deleted, not taken off, within 14 days, "
+          "one without an end lasts an hour",
           titles == ["D mine running", "G mine without an end", "A mine tomorrow"], titles)
     check("next job: client named", nxt["attributes"].get("client") == "Example Client", nxt["attributes"])
     check("next job: description without markup", nxt["attributes"].get("description") == "Raum C 201 Bühne",
           nxt["attributes"].get("description"))
+    a_job = next((j for j in nxt["attributes"].get("upcoming", []) if j["title"] == "A mine tomorrow"), {})
+    check("job: role named, crew without me, the deleted or the van",
+          a_job.get("role") == "Lighting tech" and a_job.get("crew") == ["Alex Example", "Sam Sub"], a_job)
 
     # -- calendar -------------------------------------------------------------------
     def calendar(a, b):
@@ -371,11 +410,43 @@ def main():
     check("calendar: description in Home Assistant's language",
           "Client: Example Client" in (a.get("description") or "")
           and "<" not in (a.get("description") or ""), a.get("description"))
+    check("calendar: role, activity, crew, remark and notes in the description",
+          all(line in (a.get("description") or "") for line in (
+              "Role: Lighting tech", "Activity: Aufbau", "Crew: Alex Example, Sam Sub",
+              "Remark: Bring the long ladder", "Notes: Gate code at the office")), a.get("description"))
     far = calendar(now + 15 * day, now + 25 * day)
     check("calendar: outside the polled window is read on demand",
           [c["summary"] for c in far] == ["E mine in 20 days"], far)
     check("calendar state is the running job", state(e["jobs"]).get("attributes", {}).get("message") == "D mine running",
           state(e["jobs"]).get("attributes"))
+
+    # -- vacation and absences -------------------------------------------------------
+    vacation = state(e["vacation_left"])
+    check("vacation: days left", vacation.get("state") == "12.5", vacation)
+    check("vacation: the account in the attributes",
+          {k: vacation.get("attributes", {}).get(k) for k in ("entitlement", "carryover", "requested", "available")}
+          == {"entitlement": 30, "carryover": 3, "requested": 1, "available": 11.5}, vacation.get("attributes"))
+
+    def absences_between(a, b):
+        q = urllib.parse.urlencode({"start": a.isoformat(), "end": b.isoformat()})
+        return call("GET", f"{HA}/api/calendars/{e['absences']}?{q}")[1]
+    away = absences_between(midnight - day, midnight + 10 * day)
+    check("absences: mine, not cancelled, not deleted, in order",
+          [c["summary"] for c in away] == ["Sick", "Flextime", "Vacation"], [c.get("summary") for c in away])
+    holiday = next((c for c in away if c["summary"] == "Vacation"), {})
+    check("absences: whole days are all-day, the last day included",
+          holiday.get("start") == {"date": (midnight + 5 * day).date().isoformat()}
+          and holiday.get("end") == {"date": (midnight + 8 * day).date().isoformat()}, holiday)
+    half = next((c for c in away if c["summary"] == "Flextime"), {})
+    check("absences: part of a day keeps its times, and says it is not approved yet",
+          "dateTime" in (half.get("start") or {}) and "Doctor" in (half.get("description") or "")
+          and "not approved yet" in (half.get("description") or ""), half)
+    later = absences_between(midnight + 799 * day, midnight + 802 * day)
+    check("absences: outside the polled window read on demand",
+          [c["summary"] for c in later] == ["Vacation"], later)
+    today = state(e["absences"])
+    check("absences: on today, sick", today.get("state") == "on"
+          and today.get("attributes", {}).get("message") == "Sick", today)
 
     # -- switch ---------------------------------------------------------------------
     mark = log_mark()
@@ -534,6 +605,9 @@ def main():
                        {"username": USERNAME, "password": "still wrong"})
         check("reauth: wrong password refused", step.get("errors", {}).get("base") == "invalid_auth", step)
         before = len(call("GET", f"{HA}/api/error_log")[1])
+        # The reload this sign-in brings sees a company that keeps absences
+        # from this login.
+        mock("forbid", {"paths": ["/api/v2/absenceaccounts", "/api/v2/absences"]})
         _, step = call("POST", f"{flows}/{flow['flow_id']}",
                        {"username": USERNAME, "password": PASSWORD})
         check("reauth: signed in again", step.get("reason") == "reauth_successful", step)
@@ -545,6 +619,11 @@ def main():
         check("reauth: the new token stored",
               wait("new token on disk",
                    lambda: stored_entry()[0].get("data", {}).get("api_token") == "new:key", 30))
+        left_out = [state(e[k]) for k in ("vacation_left", "absences")]
+        check("not allowed to read absences: those two left out, the rest works",
+              all(x.get("state") == "unavailable" and x.get("attributes", {}).get("restored") for x in left_out)
+              and state(e["punch_clock"]).get("state") == "off", left_out)
+        mock("forbid", {"paths": []})
 
     # -- translations and the log -----------------------------------------------------------
     def keys(node, prefix=""):
@@ -562,6 +641,8 @@ def main():
         "sensor.clocked_in_since.state.not_clocked_in": "Nicht eingestempelt",
         "switch.punch_clock.state.on": "Eingestempelt",
         "calendar.jobs.state.off": "Kein Job",
+        "calendar.absences.state.on": "Abwesend",
+        "sensor.vacation_left.name": "Urlaubstage übrig",
     }
     check("translations: the states' German wording is served to the frontend",
           all(served.get(f"component.crewbrain.entity.{k}") == v for k, v in wanted.items()),

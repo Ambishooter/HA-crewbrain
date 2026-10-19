@@ -67,7 +67,8 @@
         "state": { "not_clocked_in": "Not clocked in" }
       },
       "worked_today": { "name": "Worked today" },
-      "next_job": { "name": "Next job" }
+      "next_job": { "name": "Next job" },
+      "vacation_left": { "name": "Vacation days left" }
     },
     "switch": {
       "punch_clock": {
@@ -79,6 +80,10 @@
       "jobs": {
         "name": "Jobs",
         "state": { "on": "Job running", "off": "No job running" }
+      },
+      "absences": {
+        "name": "Absences",
+        "state": { "on": "Absent", "off": "Not absent" }
       }
     }
   },

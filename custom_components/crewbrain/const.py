@@ -19,6 +19,8 @@ DEFAULT_ACTIVITY = "Home Assistant"
 #: in the window, so they are read far less often.
 CLOCK_INTERVAL = timedelta(seconds=60)
 JOBS_INTERVAL = timedelta(minutes=30)
+#: The vacation account and the absences change rarely.
+ABSENCE_INTERVAL = timedelta(hours=1)
 #: How far back the job list reaches, so a job that started earlier and is
 #: still running is not lost. Jobs already over are dropped before their
 #: crew is read.

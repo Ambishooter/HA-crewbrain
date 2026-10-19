@@ -35,6 +35,11 @@ STATE = {
     "clients": {},
     "locations": {},
     "categories": [],
+    "roles": {},
+    "account": {},
+    "absences": [],
+    "absence_kinds": [],
+    "forbidden": [],
     "log": [],
     "evil_log": [],
 }
@@ -90,6 +95,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"Accesstoken": STATE["key"]}, content_type="text/html")
         if self.headers.get("X-API-KEY") != STATE["key"]:
             return self._send(401, {"error": "invalid api key"})
+        if any(url.path.startswith(prefix) for prefix in STATE["forbidden"]):
+            return self._send(403, {"error": "no access"})
         if (STATE["evil"] and method == "GET"
                 and url.path.startswith("/api/v2/workinghours")):
             return self._send(308, None, headers={
@@ -104,6 +111,25 @@ class Handler(BaseHTTPRequestHandler):
                 "Username": USERNAME}]}, content_type="text/html")
         if path == "/api/v2/categories/time" and method == "GET":
             return self._send(200, {"data": STATE["categories"]})
+        m = re.fullmatch(r"/api/v2/categories/generic/(\d+)", path)
+        if m and method == "GET" and m.group(1) in STATE["roles"]:
+            return self._send(200, {"data": [{"ID": int(m.group(1)), "Title": STATE["roles"][m.group(1)]}]})
+        if path == "/api/v2/categories/vacation" and method == "GET":
+            return self._send(200, {"data": STATE["absence_kinds"]})
+        if path == "/api/v2/absenceaccounts" and method == "GET":
+            # A bare object, as the spec has it.
+            return self._send(200, STATE["account"])
+        if path == "/api/v2/absences" and method == "GET":
+            rows = STATE["absences"]
+            for field in ("Assignment", "AssignmentID"):
+                if field in q:
+                    rows = [r for r in rows if str(r.get(field)) == q[field][0]]
+            if "Until[gte]" in q:
+                rows = [r for r in rows if r["Until"] >= q["Until[gte]"][0]]
+            if "From[lte]" in q:
+                rows = [r for r in rows if r["From"] <= q["From[lte]"][0]]
+            rows = sorted(rows, key=lambda r: r["From"])
+            return self._send(200, {"data": rows[: int(q.get("limit", ["100"])[0])]})
         m = re.fullmatch(r"/api/v2/workinghours(?:/(\d+))?", path)
         if m:
             return self._workinghours(method, int(m.group(1)) if m.group(1) else None, q, body)
@@ -163,7 +189,8 @@ class Handler(BaseHTTPRequestHandler):
         data = json.loads(body) if body else {}
         if path == "/__seed":
             STATE.update({k: data[k] for k in
-                          ("records", "events", "crew", "clients", "locations", "categories")
+                          ("records", "events", "crew", "clients", "locations", "categories",
+                           "roles", "account", "absences", "absence_kinds")
                           if k in data})
         elif path == "/__two_open":
             for _ in range(2):
@@ -174,6 +201,8 @@ class Handler(BaseHTTPRequestHandler):
             STATE["records"] = [r for r in STATE["records"] if r["DateUntil"] is not None]
         elif path == "/__evil":
             STATE["evil"] = bool(data.get("on"))
+        elif path == "/__forbid":
+            STATE["forbidden"] = list(data.get("paths", []))
         elif path == "/__delay":
             STATE["delay"] = float(data.get("seconds", 0))
         elif path == "/__set_key":

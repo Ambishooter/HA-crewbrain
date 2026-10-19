@@ -61,6 +61,10 @@ class CrewBrainAuthError(CrewBrainError):
     """CrewBrain refused the token, or the username and password."""
 
 
+class CrewBrainForbiddenError(CrewBrainError):
+    """The login is valid, but the company does not let it read this."""
+
+
 class CrewBrainStateError(CrewBrainError):
     """The punch clock is not in a state that allows the action.
 
@@ -211,6 +215,12 @@ class Job:
     status: str | None
     kind: str | None
     resource_id: int | None
+    #: This employee's booking on the job, and who else is on it.
+    role: str | None = None
+    activity: str | None = None
+    remark: str | None = None
+    notes: str | None = None
+    crew: tuple[str, ...] = ()
 
     @property
     def until(self) -> datetime:
@@ -233,7 +243,21 @@ class Job:
             "location": self.location,
             "city": self.city,
             "project": self.project,
+            "role": self.role,
+            "crew": list(self.crew),
         }
+
+
+@dataclass(frozen=True)
+class Absence:
+    """A vacation, sick or other absence of this employee."""
+
+    id: int
+    kind: str
+    start: datetime
+    end: datetime
+    approved: bool
+    reason: str
 
 
 class CrewBrainApi:
@@ -257,6 +281,9 @@ class CrewBrainApi:
         #: name does not change between polls.
         self._clients: dict[int, str] = {}
         self._locations: dict[int, tuple[str, str]] = {}
+        #: Role category -> title, and absence category -> title.
+        self._roles: dict[int, str] = {}
+        self._absence_kinds: dict[int, str] = {}
         #: The crew of each job is one request per job. No rate-limit
         #: headers have been seen, so the ceiling is unknown; stay well
         #: under it.
@@ -295,6 +322,8 @@ class CrewBrainApi:
                     text = await response.text()
                     if response.status == 401:
                         raise CrewBrainAuthError(f"{method} {path}: refused (401)")
+                    if response.status == 403:
+                        raise CrewBrainForbiddenError(f"{method} {path}: not allowed (403)")
                     if response.status >= 400:
                         raise CrewBrainError(
                             f"{method} {path}: HTTP {response.status}")
@@ -466,16 +495,24 @@ class CrewBrainApi:
                     _LOGGER.warning("CrewBrain: crew of job %s not readable",
                                     event.get("ID"))
                     return None
+            mine, others = None, []
             for row in crew:
-                if (str(row.get("Assignment")) == "EMPLOYEE"
-                        and row.get("AssignmentID") == self.employee_id):
-                    return dict(event, resource_id=row.get("ID"))
-            return None
+                if row.get("Deleted"):
+                    continue
+                kind = str(row.get("Assignment"))
+                if kind == "EMPLOYEE" and row.get("AssignmentID") == self.employee_id:
+                    mine = row
+                elif kind in ("EMPLOYEE", "SUBCONTRACTOR") and row.get("Name"):
+                    others.append(str(row["Name"]).strip())
+            if mine is None:
+                return None
+            return dict(event, resource_id=mine.get("ID"), booking=mine, crew=others)
 
         mine = [e for e in await asyncio.gather(*(crewed(e) for e in events))
                 if e is not None]
         await self._name_clients(mine)
         await self._name_locations(mine)
+        await self._name_roles(mine)
         jobs = [job for job in (self._job(e) for e in mine) if job is not None]
         return sorted(jobs, key=lambda j: j.start)
 
@@ -485,6 +522,7 @@ class CrewBrainApi:
             return None
         location = self._locations.get(int(event.get("LocationID") or 0))
         parents = event.get("ParentTitles") or []
+        booking = event.get("booking") or {}
         return Job(
             id=int(event["ID"]),
             number=event.get("EventIDFormatted"),
@@ -499,6 +537,11 @@ class CrewBrainApi:
             status=event.get("Status"),
             kind=event.get("Subtype"),
             resource_id=event.get("resource_id"),
+            role=self._roles.get(int(booking.get("CategoryID") or 0)) or None,
+            activity=plain_text(booking.get("Activity")) or None,
+            remark=plain_text(booking.get("Remark")) or None,
+            notes=plain_text(booking.get("Notes")) or None,
+            crew=tuple(event.get("crew") or ()),
         )
 
     async def _name_clients(self, events: list[dict[str, Any]]) -> None:
@@ -519,6 +562,84 @@ class CrewBrainApi:
             self._clients[client_id] = str(record.get("Name") or "").strip()
 
         await asyncio.gather(*(name(c) for c in wanted))
+
+    async def _name_roles(self, events: list[dict[str, Any]]) -> None:
+        """What this employee is booked as. A category, looked up once.
+
+        Not every login may read categories; then the role stays empty and
+        is not asked again.
+        """
+        wanted = {int(e["booking"]["CategoryID"]) for e in events
+                  if (e.get("booking") or {}).get("CategoryID")
+                  and int(e["booking"]["CategoryID"]) not in self._roles}
+
+        async def title(category_id: int) -> None:
+            async with self._gate:
+                try:
+                    record = _one(await self._request(
+                        "GET", f"/v2/categories/generic/{category_id}"))
+                except CrewBrainForbiddenError:
+                    self._roles[category_id] = ""
+                    return
+                except CrewBrainAuthError:
+                    raise
+                except CrewBrainError:
+                    _LOGGER.debug("CrewBrain: role %s not readable", category_id)
+                    return
+            self._roles[category_id] = str(record.get("Title") or "").strip()
+
+        await asyncio.gather(*(title(c) for c in wanted))
+
+    # -- absences --------------------------------------------------------------
+
+    async def vacation_account(self) -> dict[str, Any]:
+        """This year's vacation account of the logged-in employee."""
+        return _one(await self._request("GET", "/v2/absenceaccounts"))
+
+    async def my_absences(self, since: datetime, until: datetime) -> list[Absence]:
+        """This employee's absences that overlap a window, cancelled ones left out."""
+        payload = await self._request("GET", "/v2/absences", params={
+            "Assignment": "EMPLOYEE",
+            "AssignmentID": self.employee_id,
+            "Until[gte]": format_stamp(since),
+            "From[lte]": format_stamp(until),
+            "sort": "From",
+            "limit": 200,
+        })
+        # Filtered here as well: what counts is that it is this employee's.
+        rows = [r for r in _rows(payload)
+                if str(r.get("Assignment") or "EMPLOYEE") == "EMPLOYEE"
+                and r.get("AssignmentID") == self.employee_id
+                and not r.get("Deleted") and not _flag(r.get("CancellationApproved"))]
+        await self._name_absence_kinds()
+        absences = []
+        for row in rows:
+            start, end = parse_stamp(row.get("From")), parse_stamp(row.get("Until"))
+            if start is None or end is None or row.get("ID") is None:
+                continue
+            absences.append(Absence(
+                id=int(row["ID"]),
+                kind=self._absence_kinds.get(int(row.get("CategoryID") or 0), ""),
+                start=start,
+                end=end,
+                approved=_flag(row.get("Approved")),
+                reason=plain_text(row.get("Reason")),
+            ))
+        return sorted(absences, key=lambda a: a.start)
+
+    async def _name_absence_kinds(self) -> None:
+        """Vacation, sick and the rest: the company's absence categories, once."""
+        if self._absence_kinds:
+            return
+        try:
+            rows = _rows(await self._request("GET", "/v2/categories/vacation"))
+        except CrewBrainAuthError:
+            raise
+        except CrewBrainError as err:
+            _LOGGER.debug("CrewBrain: absence categories not readable: %s", err)
+            return
+        self._absence_kinds = {int(r["ID"]): str(r.get("Title") or "").strip()
+                               for r in rows if r.get("ID") is not None}
 
     async def _name_locations(self, events: list[dict[str, Any]]) -> None:
         """Where the work happens. Often not the client, and both are kept."""

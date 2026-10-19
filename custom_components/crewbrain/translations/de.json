@@ -67,7 +67,8 @@
         "state": { "not_clocked_in": "Nicht eingestempelt" }
       },
       "worked_today": { "name": "Heute gearbeitet" },
-      "next_job": { "name": "Nächster Job" }
+      "next_job": { "name": "Nächster Job" },
+      "vacation_left": { "name": "Urlaubstage übrig" }
     },
     "switch": {
       "punch_clock": {
@@ -79,6 +80,10 @@
       "jobs": {
         "name": "Jobs",
         "state": { "on": "Job läuft", "off": "Kein Job" }
+      },
+      "absences": {
+        "name": "Abwesenheiten",
+        "state": { "on": "Abwesend", "off": "Nicht abwesend" }
       }
     }
   },

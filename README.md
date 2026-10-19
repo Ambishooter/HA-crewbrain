@@ -34,8 +34,12 @@ clock-in is booked into, and the activity text it writes.
 | `binary_sensor` Status | Clocked in or clocked out, read-only. |
 | `sensor` Clocked in since | The clock-in time, or "Not clocked in". The exact moment is in the `since` attribute. |
 | `sensor` Worked today | Hours and minutes booked today. |
-| `sensor` Next job | The next job that is not over yet, with the ones after it as attributes. |
-| `calendar` Jobs | Your jobs. On while one is running; its attributes show the current or next one. |
+| `sensor` Next job | The next job that is not over yet: your role, the crew, remarks and notes, and the jobs after it as attributes. |
+| `calendar` Jobs | Your jobs, with the same details. On while one is running. |
+| `sensor` Vacation days left | This year's remaining vacation days. The rest of the vacation account is in its attributes. |
+| `calendar` Absences | Your vacation, sick and other days off. On while one lasts. |
+
+Vacation and absences appear only if your company lets your login read them.
 
 ## Actions
 

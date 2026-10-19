@@ -27,7 +27,7 @@ from .const import (
     SERVICE_CLOCK_IN,
     SERVICE_CLOCK_OUT,
 )
-from .coordinator import ClockCoordinator, JobsCoordinator
+from .coordinator import AbsenceCoordinator, ClockCoordinator, JobsCoordinator
 from .punch import async_clock_in, async_clock_out
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ class CrewBrainData:
     api: CrewBrainApi
     clock: ClockCoordinator
     jobs: JobsCoordinator
+    absences: AbsenceCoordinator
     #: The company's active time categories, read once per load.
     categories: list[dict[str, Any]] = field(default_factory=list)
     #: Where a clock-in books when the options name no category.
@@ -111,6 +112,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: CrewBrainConfigEntry) ->
     jobs = JobsCoordinator(hass, entry, api)
     await clock.async_config_entry_first_refresh()
     await jobs.async_config_entry_first_refresh()
+    absences = AbsenceCoordinator(hass, entry, api)
+    # Optional: a failure here never keeps the punch clock from loading.
+    await absences.async_refresh()
     try:
         categories = await api.time_categories()
     except CrewBrainAuthError as err:
@@ -121,7 +125,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: CrewBrainConfigEntry) ->
         _LOGGER.warning("CrewBrain: time categories not readable: %s", err)
         categories = []
     entry.runtime_data = CrewBrainData(
-        hass=hass, api=api, clock=clock, jobs=jobs, categories=categories,
+        hass=hass, api=api, clock=clock, jobs=jobs, absences=absences,
+        categories=categories,
         default_category=default_category(categories))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

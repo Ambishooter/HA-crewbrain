@@ -1,9 +1,11 @@
-"""Polling: the clocked-in state every minute, the jobs every half hour."""
+"""Polling: the clocked-in state every minute, jobs every half hour,
+absences every hour."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from collections.abc import Awaitable
+from datetime import date, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -12,8 +14,17 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import CrewBrainApi, CrewBrainAuthError, CrewBrainError, Job, parse_stamp
+from .api import (
+    Absence,
+    CrewBrainApi,
+    CrewBrainAuthError,
+    CrewBrainError,
+    CrewBrainForbiddenError,
+    Job,
+    parse_stamp,
+)
 from .const import (
+    ABSENCE_INTERVAL,
     CLOCK_INTERVAL,
     DEFAULT_DAYS_AHEAD,
     DOMAIN,
@@ -120,3 +131,58 @@ class JobsCoordinator(DataUpdateCoordinator[list[Job]]):
         # is complete starts today.
         self.window_start, self.window_end = today, end
         return jobs
+
+
+@dataclass
+class AbsenceState:
+    """The vacation account and the absences.
+
+    None where the company does not let this login read them: then there is
+    nothing to show, which is not an error.
+    """
+
+    account: dict[str, Any] | None
+    absences: list[Absence] | None
+
+
+class AbsenceCoordinator(DataUpdateCoordinator[AbsenceState]):
+    """Vacation and sick days, from the start of this year to the end of next."""
+
+    config_entry: CrewBrainConfigEntry
+
+    def __init__(self, hass: HomeAssistant, entry: CrewBrainConfigEntry,
+                 api: CrewBrainApi) -> None:
+        super().__init__(hass, _LOGGER, config_entry=entry,
+                         name=f"{DOMAIN} absences", update_interval=ABSENCE_INTERVAL)
+        self.api = api
+        self.window_start: datetime | None = None
+        self.window_end: datetime | None = None
+
+    def offers(self, part: str) -> bool:
+        """Whether to set up the entity for `account` or `absences`.
+
+        Not read yet, because CrewBrain did not answer, counts as yes.
+        """
+        return not self.last_update_success or getattr(self.data, part) is not None
+
+    async def _async_update_data(self) -> AbsenceState:
+        year = dt_util.now().year
+        start = dt_util.start_of_local_day(date(year, 1, 1))
+        end = dt_util.start_of_local_day(date(year + 2, 1, 1))
+        try:
+            account = await _unless_forbidden(self.api.vacation_account())
+            absences = await _unless_forbidden(self.api.my_absences(start, end))
+        except CrewBrainAuthError as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except CrewBrainError as err:
+            raise UpdateFailed(str(err)) from err
+        self.window_start, self.window_end = start, end
+        return AbsenceState(account=account, absences=absences)
+
+
+async def _unless_forbidden[T](call: Awaitable[T]) -> T | None:
+    """What a read returns, or None when the company does not allow it."""
+    try:
+        return await call
+    except CrewBrainForbiddenError:
+        return None
