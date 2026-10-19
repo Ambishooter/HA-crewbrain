@@ -41,6 +41,23 @@ clock-in is booked into, and the activity text it writes.
 
 Vacation and absences appear only if your company lets your login read them.
 
+## Requesting time off
+
+In Home Assistant's calendar, add an event to **Absences**:
+
+- **Summary:** the type, as CrewBrain names it, for example `Vacation`. The
+  calendar's `types` attribute lists the ones you can ask for.
+- **Description:** the reason, optional.
+- **All day** on, and the first and last day.
+
+The request goes to CrewBrain and shows in the calendar as not approved yet.
+Deleting it withdraws it, as long as it is not approved. Approving stays
+with your company.
+
+A stand-in, if you want one on every request, is set in the options. It
+starts as the one CrewBrain has for you. In automations, use
+`calendar.create_event` on the Absences calendar.
+
 ## Actions
 
 ```yaml

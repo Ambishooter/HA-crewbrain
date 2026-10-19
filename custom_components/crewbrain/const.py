@@ -12,6 +12,7 @@ CONF_EMPLOYEE_ID = "employee_id"
 OPT_DAYS_AHEAD = "days_ahead"
 OPT_ACTIVITY = "activity"
 OPT_CATEGORY = "category"
+OPT_STAND_IN = "stand_in"
 DEFAULT_DAYS_AHEAD = 14
 DEFAULT_ACTIVITY = "Home Assistant"
 

@@ -39,6 +39,7 @@ STATE = {
     "account": {},
     "absences": [],
     "absence_kinds": [],
+    "staff": [],
     "forbidden": [],
     "log": [],
     "evil_log": [],
@@ -119,6 +120,22 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v2/absenceaccounts" and method == "GET":
             # A bare object, as the spec has it.
             return self._send(200, STATE["account"])
+        if path == "/api/v2/staff" and method == "GET":
+            return self._send(200, {"data": STATE["staff"]})
+        if path == "/api/v2/absences" and method == "POST":
+            absence = json.loads(body)
+            STATE["next_id"] += 1
+            absence.update(ID=STATE["next_id"], Approved=False, Deleted=None,
+                           CancellationApproved=False)
+            STATE["absences"].append(absence)
+            return self._send(201, absence)
+        m = re.fullmatch(r"/api/v2/absences/(\d+)", path)
+        if m and method == "DELETE":
+            for absence in STATE["absences"]:
+                if absence["ID"] == int(m.group(1)) and not absence.get("Deleted"):
+                    absence["Deleted"] = "20261019T120000Z"
+                    return self._send(202, None)
+            return self._send(404, {"error": "no absence"})
         if path == "/api/v2/absences" and method == "GET":
             rows = STATE["absences"]
             for field in ("Assignment", "AssignmentID"):
@@ -190,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/__seed":
             STATE.update({k: data[k] for k in
                           ("records", "events", "crew", "clients", "locations", "categories",
-                           "roles", "account", "absences", "absence_kinds")
+                           "roles", "account", "absences", "absence_kinds", "staff")
                           if k in data})
         elif path == "/__two_open":
             for _ in range(2):
@@ -221,6 +238,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         self._handle("PUT")
+
+    def do_DELETE(self):
+        self._handle("DELETE")
 
     def log_message(self, *args):
         pass

@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.calendar import CalendarEntity, CalendarEvent
+from homeassistant.components.calendar import (
+    CalendarEntity,
+    CalendarEntityFeature,
+    CalendarEvent,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -15,6 +19,7 @@ from .api import NO_END, Absence, CrewBrainError, CrewBrainForbiddenError, Job
 from .const import DOMAIN
 from .coordinator import AbsenceCoordinator, JobsCoordinator
 from .entity import CrewBrainEntity
+from .timeoff import absence_uid, async_request, async_withdraw
 
 if TYPE_CHECKING:
     from . import CrewBrainConfigEntry
@@ -80,7 +85,7 @@ def _absence_event(absence: Absence, labels: dict[str, str]) -> CalendarEvent:
     details = {
         "summary": absence.kind or labels["absence"],
         "description": "\n".join(line for line in lines if line) or None,
-        "uid": f"crewbrain-absence-{absence.id}",
+        "uid": absence_uid(absence.id),
     }
     if start.time() == time(0) and end.time().replace(microsecond=0) in _DAY_END:
         last = end.date() - timedelta(days=1) if end.time() == time(0) else end.date()
@@ -130,7 +135,14 @@ class Jobs(CrewBrainEntity[JobsCoordinator], CalendarEntity):
 
 
 class Absences(CrewBrainEntity[AbsenceCoordinator], CalendarEntity):
-    """Vacation, sick and other days off. On while one lasts."""
+    """Vacation, sick and other days off. On while one lasts.
+
+    Adding an event requests time off; deleting a request withdraws it.
+    """
+
+    _attr_supported_features = (
+        CalendarEntityFeature.CREATE_EVENT | CalendarEntityFeature.DELETE_EVENT
+    )
 
     @property
     def _absences(self) -> list[Absence] | None:
@@ -140,6 +152,18 @@ class Absences(CrewBrainEntity[AbsenceCoordinator], CalendarEntity):
     @property
     def available(self) -> bool:
         return super().available and self._absences is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """The types a request can name, as its summary."""
+        return {"types": list(self.coordinator.api.time_off_types.values())}
+
+    async def async_create_event(self, **kwargs: Any) -> None:
+        await async_request(self.entry, kwargs)
+
+    async def async_delete_event(self, uid: str, recurrence_id: str | None = None,
+                                 recurrence_range: str | None = None) -> None:
+        await async_withdraw(self.entry, uid)
 
     @property
     def event(self) -> CalendarEvent | None:

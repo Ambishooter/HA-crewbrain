@@ -291,9 +291,24 @@ def main():
         "account": {"Year": "2026", "YearlyVacationEntitlement": 30, "CarryoverFromPreviousYear": 3,
                     "ExpiredCarryover": 0, "VacationDays": 33, "AlreadyApproved": 20.5,
                     "AlreadyUsed": 18, "Submitted": 1, "RemainingVacation": 12.5, "Available": 11.5},
-        "absence_kinds": [{"ID": 1, "Title": "Vacation", "Account": "VACATION"},
-                          {"ID": 2, "Title": "Sick", "Account": "SICK"},
-                          {"ID": 3, "Title": "Flextime", "Account": "FLEXTIME"}],
+        "absence_kinds": [
+            {"ID": 1, "Title": "Vacation", "Account": "VACATION", "Type": "TIMEOFF", "Position": 1},
+            {"ID": 2, "Title": "Sick", "Account": "SICK", "Type": "SICKNOTES", "Position": 2},
+            {"ID": 3, "Title": "Flextime", "Account": "FLEXTIME", "Type": "TIMEOFF", "Position": 3},
+            {"ID": 4, "Title": "Public holiday", "Account": "FREETIME", "Type": "OFFICIALHOLIDAY"},
+            {"ID": 5, "Title": "Old leave", "Account": "VACATION", "Type": "TIMEOFF", "Active": False},
+        ],
+        # Me with my usual stand-in, two who can stand in, three who can't.
+        "staff": [
+            {"ID": 42, "FullName": "Test Person", "Status": "EMPLOYEE", "Type": "EMPLOYEE",
+             "VacationDefaultDeputyId": 7},
+            {"ID": 7, "FullName": "Alex Example", "Status": "EMPLOYEE", "Type": "EMPLOYEE"},
+            {"ID": 14, "Firstname": "Bea", "Lastname": "Backup", "Status": "SCHEDULER", "Type": "EMPLOYEE"},
+            {"ID": 11, "FullName": "Kim Locked", "Status": "LOCKED", "Type": "EMPLOYEE"},
+            {"ID": 12, "FullName": "Fred Freelancer", "Status": "EMPLOYEE", "Type": "FREELANCER"},
+            {"ID": 13, "FullName": "Dan Deleted", "Status": "EMPLOYEE", "Type": "EMPLOYEE",
+             "Deleted": "20260101T000000Z"},
+        ],
         "absences": [{"ID": i, "CategoryID": k, "From": stamp(a), "Until": stamp(b), "Approved": ok,
                       "Assignment": "EMPLOYEE", "AssignmentID": who, "CancellationApproved": cancelled,
                       "Deleted": deleted, "Reason": "Doctor" if i == 54 else ""}
@@ -448,6 +463,76 @@ def main():
     check("absences: on today, sick", today.get("state") == "on"
           and today.get("attributes", {}).get("message") == "Sick", today)
 
+    # -- requesting time off ---------------------------------------------------------
+    check("time off: the types a request can name, in order, no sick notes, holidays or inactive",
+          today.get("attributes", {}).get("types") == ["Vacation", "Flextime"], today.get("attributes"))
+    staff_query = next((r["query"] for r in mock("dump")["log"] if r["path"] == "/api/v2/staff"), "")
+    check("time off: from the staff list only names and the stand-in are asked for",
+          "fields=ID%2CFullName%2CFirstname%2CLastname%2CStatus%2CType%2CDeleted%2CVacationDefaultDeputyId"
+          in staff_query, staff_query)
+
+    def absence_event(event):
+        return WS.command_full("calendar/event/create", entity_id=e["absences"], event=event)
+
+    def refusal(reply):
+        return (reply.get("error") or {}).get("message", "") if not reply.get("success") else ""
+
+    first, last = (midnight + 40 * day).date(), (midnight + 42 * day).date()
+    mark = log_mark()
+    reply = absence_event({"summary": "vacation", "dtstart": first.isoformat(),
+                           "dtend": (last + timedelta(days=1)).isoformat(), "description": "Family trip"})
+    posts = [json.loads(x["body"]) for x in requests_since(mark)
+             if x["method"] == "POST" and x["path"] == "/api/v2/absences"]
+    check("time off: an event added to the calendar is one request", reply.get("success") and len(posts) == 1,
+          (reply, posts))
+    body = posts[0] if posts else {}
+    check("time off: type from the summary, reason from the description, my stand-in",
+          {k: body.get(k) for k in ("Assignment", "AssignmentID", "CategoryID", "Reason", "DeputyID")}
+          == {"Assignment": "EMPLOYEE", "AssignmentID": 42, "CategoryID": 1, "Reason": "Family trip",
+              "DeputyID": 7}, body)
+    # The newest whole-day absence (50) ends a second before midnight, so does this.
+    check("time off: whole local days, ending the way the company's own do",
+          body.get("From") == stamp(midnight + 40 * day)
+          and body.get("Until") == stamp(midnight + 43 * day - timedelta(seconds=1)), body)
+    shown = absences_between(midnight + 39 * day, midnight + 44 * day)
+    new = next((c for c in shown if c.get("summary") == "Vacation"), {})
+    check("time off: in the calendar at once, as not approved yet",
+          new.get("start") == {"date": first.isoformat()} and new.get("end") == {"date": (last + timedelta(days=1)).isoformat()}
+          and "Family trip" in (new.get("description") or "")
+          and "not approved yet" in (new.get("description") or ""), shown)
+
+    mark = log_mark()
+    later_day = (midnight + 60 * day).date()
+    absent = absence_event({"summary": "Flextime", "dtstart": (first + timedelta(days=1)).isoformat(),
+                            "dtend": (first + timedelta(days=2)).isoformat()})
+    unknown = absence_event({"summary": "Holidays", "dtstart": later_day.isoformat(),
+                             "dtend": (later_day + timedelta(days=1)).isoformat()})
+    hours = absence_event({"summary": "Vacation",
+                           "dtstart": (midnight + 60 * day + 9 * hour).isoformat(),
+                           "dtend": (midnight + 60 * day + 12 * hour).isoformat()})
+    weekly = absence_event({"summary": "Vacation", "dtstart": later_day.isoformat(),
+                            "dtend": (later_day + timedelta(days=1)).isoformat(), "rrule": "FREQ=WEEKLY"})
+    check("time off: already absent then, refused", "already absent" in refusal(absent), absent)
+    check("time off: an unknown type refused, with the ones there are",
+          "Use one of: Vacation, Flextime" in refusal(unknown), unknown)
+    check("time off: whole days only", "whole days" in refusal(hours), hours)
+    check("time off: no repeating requests", "can't repeat" in refusal(weekly), weekly)
+    check("time off: nothing written for a refused one",
+          not [x for x in requests_since(mark) if x["method"] != "GET"])
+
+    mark = log_mark()
+    gone = WS.command_full("calendar/event/delete", entity_id=e["absences"], uid=new.get("uid", "-"))
+    deletes = [x["path"] for x in requests_since(mark) if x["method"] == "DELETE"]
+    check("time off: deleting a request withdraws it",
+          gone.get("success") and deletes == [f"/api/v2/absences/{new.get('uid', '-').rsplit('-', 1)[-1]}"],
+          (gone, deletes))
+    check("time off: and it is gone from the calendar",
+          all(c.get("uid") != new.get("uid") for c in absences_between(midnight + 39 * day, midnight + 44 * day)))
+    mark = log_mark()
+    kept = WS.command_full("calendar/event/delete", entity_id=e["absences"], uid="crewbrain-absence-50")
+    check("time off: an approved one is not withdrawn from here",
+          "is approved" in refusal(kept) and not [x for x in requests_since(mark) if x["method"] != "GET"], kept)
+
     # -- switch ---------------------------------------------------------------------
     mark = log_mark()
     r = service("switch", "turn_on", {"entity_id": e["punch_clock"]})
@@ -564,8 +649,14 @@ def main():
     check("options: categories offered in CrewBrain's order, inactive left out",
           offered == ["Break", "Working hours", "Driving time"], offered)
     check("options: default category is the first working-hours one", field.get("default") == "12", field)
+    stand = next((f for f in flow.get("data_schema", []) if f.get("name") == "stand_in"), {})
+    labels = [o.get("label") for o in stand.get("selector", {}).get("select", {}).get("options", [])]
+    check("options: stand-ins from the staff list, CrewBrain's own one chosen",
+          labels == ["—", "Alex Example", "Bea Backup"] and stand.get("default") == "7", stand)
+    # The reload this brings meets a company that keeps its staff list closed.
+    mock("forbid", {"paths": ["/api/v2/staff"]})
     _, done = call("POST", f"{opts}/{flow['flow_id']}",
-                   {"days_ahead": 30, "activity": "Büro", "category": "13"})
+                   {"days_ahead": 30, "activity": "Büro", "category": "13", "stand_in": "none"})
     check("options: saved", done.get("type") == "create_entry", done)
     wait("reload with 30 days", lambda: "E mine in 20 days" in
          [j["title"] for j in state(e["next_job"])["attributes"].get("upcoming", [])])
@@ -575,6 +666,22 @@ def main():
     check("options: activity text used", posts and posts[0].get("Activity") == "Büro", posts)
     check("options: category used", posts and posts[0].get("CategoryID") == 13, posts)
     service("switch", "turn_off", {"entity_id": e["punch_clock"]})
+    _, again = call("POST", opts, {"handler": entry_id})
+    stand = next((f for f in again.get("data_schema", []) if f.get("name") == "stand_in"), {})
+    labels = [o.get("label") for o in stand.get("selector", {}).get("select", {}).get("options", [])]
+    check("options: without the staff list, stand-ins are the colleagues from the jobs",
+          labels == ["—", "Alex Example"] and stand.get("default") == "none", stand)
+    mock("forbid", {"paths": []})
+    mark = log_mark()
+    asked = service("calendar", "create_event", {
+        "entity_id": e["absences"], "summary": "Flextime",
+        "start_date": (midnight + 50 * day).date().isoformat(),
+        "end_date": (midnight + 51 * day).date().isoformat()})
+    posts = [json.loads(x["body"]) for x in requests_since(mark)
+             if x["method"] == "POST" and x["path"] == "/api/v2/absences"]
+    check("options: no stand-in chosen, none sent; calendar.create_event requests too",
+          asked[0] == 200 and len(posts) == 1 and posts[0].get("CategoryID") == 3
+          and "DeputyID" not in posts[0], (asked, posts))
 
     # -- a redirect elsewhere -------------------------------------------------------------
     mock("evil", {"on": True})

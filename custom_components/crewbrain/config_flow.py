@@ -53,7 +53,9 @@ from .const import (
     OPT_ACTIVITY,
     OPT_CATEGORY,
     OPT_DAYS_AHEAD,
+    OPT_STAND_IN,
 )
+from .timeoff import NO_STAND_IN, stand_in_choices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -247,4 +249,14 @@ class CrewBrainOptionsFlow(OptionsFlowWithReload):
                        else vol.Required(OPT_CATEGORY))
                 fields[key] = SelectSelector(SelectSelectorConfig(
                     options=choices, mode=SelectSelectorMode.DROPDOWN))
+            if data.absences.offers("absences"):
+                people = sorted(stand_in_choices(self.config_entry).items(),
+                                key=lambda p: p[1].casefold())
+                stand_ins = [SelectOptionDict(value=NO_STAND_IN, label="—")] + [
+                    SelectOptionDict(value=str(i), label=name) for i, name in people]
+                chosen = options.get(OPT_STAND_IN) or str(data.default_stand_in or NO_STAND_IN)
+                if chosen not in {s["value"] for s in stand_ins}:
+                    chosen = NO_STAND_IN
+                fields[vol.Required(OPT_STAND_IN, default=chosen)] = SelectSelector(
+                    SelectSelectorConfig(options=stand_ins, mode=SelectSelectorMode.DROPDOWN))
         return self.async_show_form(step_id="init", data_schema=vol.Schema(fields))

@@ -45,7 +45,8 @@
         "data": {
           "days_ahead": "Tage, für die Jobs angezeigt werden",
           "activity": "Tätigkeit beim Einstempeln",
-          "category": "Zeitkategorie beim Einstempeln"
+          "category": "Zeitkategorie beim Einstempeln",
+          "stand_in": "Vertretung bei Abwesenheitsanträgen"
         },
         "data_description": {
           "days_ahead": "Jeder Job in diesem Zeitraum kostet alle halbe Stunde eine Anfrage, um seine Besetzung zu lesen.",
@@ -93,6 +94,12 @@
     "multiple_open": { "message": "In CrewBrain sind {count} Einträge offen. Das muss sich jemand dort ansehen." },
     "end_before_start": { "message": "Das Ende liegt vor dem Beginn um {since}." },
     "no_category": { "message": "Keine Zeitkategorie gewählt. Wähle eine in den CrewBrain-Optionen." },
+    "time_off_whole_days": { "message": "Abwesenheiten werden ganztägig beantragt. Schalte Ganztägig ein." },
+    "time_off_no_repeat": { "message": "Ein Abwesenheitsantrag kann sich nicht wiederholen." },
+    "unknown_time_off_type": { "message": "„{type}“ ist keine Abwesenheitsart in CrewBrain. Möglich sind: {types}." },
+    "already_absent": { "message": "Du bist da schon abwesend: {kind} am {day}." },
+    "absence_approved": { "message": "{kind} am {day} ist genehmigt. Storniere es in CrewBrain." },
+    "absence_gone": { "message": "Diese Abwesenheit gibt es in CrewBrain nicht mehr." },
     "auth_failed": { "message": "CrewBrain hat das Zugriffstoken abgelehnt. Melde dich unter Einstellungen, Geräte & Dienste neu an." },
     "api_error": { "message": "Anfrage an CrewBrain fehlgeschlagen: {error}" },
     "no_entry": { "message": "Kein CrewBrain-Konto ist eingerichtet und geladen." },

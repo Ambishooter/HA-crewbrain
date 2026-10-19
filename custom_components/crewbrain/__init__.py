@@ -50,6 +50,9 @@ class CrewBrainData:
     categories: list[dict[str, Any]] = field(default_factory=list)
     #: Where a clock-in books when the options name no category.
     default_category: int | None = None
+    #: Who can stand in on a time-off request, and CrewBrain's default one.
+    colleagues: dict[int, str] = field(default_factory=dict)
+    default_stand_in: int | None = None
 
 
 type CrewBrainConfigEntry = ConfigEntry[CrewBrainData]
@@ -124,10 +127,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: CrewBrainConfigEntry) ->
         # works with a category chosen earlier.
         _LOGGER.warning("CrewBrain: time categories not readable: %s", err)
         categories = []
+    colleagues: dict[int, str] = {}
+    default_stand_in = None
+    if absences.offers("absences"):
+        try:
+            colleagues, default_stand_in = await api.colleagues()
+        except CrewBrainAuthError as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except CrewBrainError as err:
+            # Then the colleagues from the jobs are offered as stand-ins.
+            _LOGGER.debug("CrewBrain: staff list not readable: %s", err)
     entry.runtime_data = CrewBrainData(
         hass=hass, api=api, clock=clock, jobs=jobs, absences=absences,
         categories=categories,
-        default_category=default_category(categories))
+        default_category=default_category(categories),
+        colleagues=colleagues, default_stand_in=default_stand_in)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

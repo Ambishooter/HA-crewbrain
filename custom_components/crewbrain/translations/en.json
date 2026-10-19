@@ -45,7 +45,8 @@
         "data": {
           "days_ahead": "Days of jobs to show ahead",
           "activity": "Activity text on a clock-in",
-          "category": "Time category on a clock-in"
+          "category": "Time category on a clock-in",
+          "stand_in": "Stand-in on time-off requests"
         },
         "data_description": {
           "days_ahead": "Every job in this window costs one request each half hour, to read its crew.",
@@ -93,6 +94,12 @@
     "multiple_open": { "message": "{count} records are open in CrewBrain. Someone has to look at them there." },
     "end_before_start": { "message": "The end time is before the start, {since}." },
     "no_category": { "message": "No time category is set. Choose one in the CrewBrain options." },
+    "time_off_whole_days": { "message": "Time off is requested in whole days. Turn on All day." },
+    "time_off_no_repeat": { "message": "A time-off request can't repeat." },
+    "unknown_time_off_type": { "message": "\"{type}\" is not a time-off type in CrewBrain. Use one of: {types}." },
+    "already_absent": { "message": "You are already absent then: {kind} on {day}." },
+    "absence_approved": { "message": "{kind} on {day} is approved. Cancel it in CrewBrain." },
+    "absence_gone": { "message": "That absence is no longer in CrewBrain." },
     "auth_failed": { "message": "CrewBrain refused the access token. Sign in again under Settings, Devices and services." },
     "api_error": { "message": "CrewBrain request failed: {error}" },
     "no_entry": { "message": "No CrewBrain account is set up and loaded." },

@@ -48,6 +48,9 @@ SERVICE_DOMAIN = "crewbrain.com"
 
 #: A job without an end, or with one before its start, still needs a length.
 NO_END = timedelta(hours=1)
+#: The kind of absence category an employee asks for, as opposed to sick
+#: notes, public holidays and calendar blocks.
+TIME_OFF = "TIMEOFF"
 
 _REDIRECTS = (301, 302, 307, 308)
 _TAG = re.compile(r"<[^>]+>")
@@ -66,17 +69,18 @@ class CrewBrainForbiddenError(CrewBrainError):
 
 
 class CrewBrainStateError(CrewBrainError):
-    """The punch clock is not in a state that allows the action.
+    """The punch clock or the absences are not in a state that allows the action.
 
     `key` is a translation key under `exceptions` in the translations.
     """
 
     def __init__(self, key: str, record: dict[str, Any] | None = None,
-                 count: int = 0) -> None:
+                 count: int = 0, absence: Absence | None = None) -> None:
         super().__init__(key)
         self.key = key
         self.record = record or {}
         self.count = count
+        self.absence = absence
 
 
 def is_crewbrain_host(host: str) -> bool:
@@ -284,6 +288,13 @@ class CrewBrainApi:
         #: Role category -> title, and absence category -> title.
         self._roles: dict[int, str] = {}
         self._absence_kinds: dict[int, str] = {}
+        #: The absence categories that can be asked for: ID -> title.
+        self.time_off_types: dict[int, str] = {}
+        #: Colleagues seen on this employee's jobs: staff ID -> name. Who can
+        #: stand in, when the staff list may not be read.
+        self.crew_seen: dict[int, str] = {}
+        #: A time-off request is a read, then a write, like a clock-in.
+        self._absence_lock = asyncio.Lock()
         #: The crew of each job is one request per job. No rate-limit
         #: headers have been seen, so the ceiling is unknown; stay well
         #: under it.
@@ -504,6 +515,8 @@ class CrewBrainApi:
                     mine = row
                 elif kind in ("EMPLOYEE", "SUBCONTRACTOR") and row.get("Name"):
                     others.append(str(row["Name"]).strip())
+                    if kind == "EMPLOYEE" and row.get("AssignmentID"):
+                        self.crew_seen[int(row["AssignmentID"])] = str(row["Name"]).strip()
             if mine is None:
                 return None
             return dict(event, resource_id=mine.get("ID"), booking=mine, crew=others)
@@ -638,8 +651,76 @@ class CrewBrainApi:
         except CrewBrainError as err:
             _LOGGER.debug("CrewBrain: absence categories not readable: %s", err)
             return
-        self._absence_kinds = {int(r["ID"]): str(r.get("Title") or "").strip()
-                               for r in rows if r.get("ID") is not None}
+        rows = [r for r in rows if r.get("ID") is not None]
+        self._absence_kinds = {int(r["ID"]): str(r.get("Title") or "").strip() for r in rows}
+        asked_for = sorted((r for r in rows if str(r.get("Type") or TIME_OFF) == TIME_OFF
+                            and r.get("Active", True) not in (False, 0, "0", "false")),
+                           key=lambda r: (r.get("Position") is None, r.get("Position") or 0))
+        self.time_off_types = {int(r["ID"]): self._absence_kinds[int(r["ID"])]
+                               for r in asked_for if self._absence_kinds[int(r["ID"])]}
+
+    async def request_time_off(self, start: datetime, end: datetime, category_id: int,
+                               reason: str = "", deputy_id: int | None = None) -> dict[str, Any]:
+        """File a time-off request, unless this employee is absent then already.
+
+        Approving it is the company's business; this only asks.
+        """
+        async with self._absence_lock:
+            clash = await self.my_absences(start, end)
+            if clash:
+                raise CrewBrainStateError("already_absent", absence=clash[0])
+            body: dict[str, Any] = {
+                "Assignment": "EMPLOYEE",
+                "AssignmentID": self.employee_id,
+                "CategoryID": category_id,
+                "From": format_stamp(start),
+                "Until": format_stamp(end),
+                "Reason": reason,
+            }
+            if deputy_id:
+                body["DeputyID"] = deputy_id
+            created = _one(await self._request("POST", "/v2/absences", body=body))
+        _LOGGER.info("CrewBrain: time off requested, absence %s", created.get("ID"))
+        return created
+
+    async def withdraw_time_off(self, absence_id: int, since: datetime,
+                                until: datetime) -> None:
+        """Take back a request that is not approved yet. It is read first."""
+        async with self._absence_lock:
+            found = [a for a in await self.my_absences(since, until) if a.id == absence_id]
+            if not found:
+                raise CrewBrainStateError("absence_gone")
+            if found[0].approved:
+                raise CrewBrainStateError("absence_approved", absence=found[0])
+            await self._request("DELETE", f"/v2/absences/{absence_id}")
+        _LOGGER.info("CrewBrain: time-off request %s withdrawn", absence_id)
+
+    async def colleagues(self) -> tuple[dict[int, str], int | None]:
+        """Who can stand in, and the stand-in CrewBrain has for this employee.
+
+        Only the fields this needs are asked for: the staff list is a
+        personnel file otherwise.
+        """
+        rows = _rows(await self._request("GET", "/v2/staff", params={
+            "fields": "ID,FullName,Firstname,Lastname,Status,Type,Deleted,VacationDefaultDeputyId",
+            "limit": 1000,
+        }))
+        people: dict[int, str] = {}
+        default = None
+        for row in rows:
+            if row.get("ID") is None:
+                continue
+            if int(row["ID"]) == self.employee_id:
+                default = row.get("VacationDefaultDeputyId") or None
+                continue
+            if (row.get("Deleted") or str(row.get("Status")) == "LOCKED"
+                    or str(row.get("Type") or "EMPLOYEE") != "EMPLOYEE"):
+                continue
+            name = str(row.get("FullName") or "").strip() or " ".join(
+                str(row.get(k) or "").strip() for k in ("Firstname", "Lastname")).strip()
+            if name:
+                people[int(row["ID"])] = name
+        return people, int(default) if default else None
 
     async def _name_locations(self, events: list[dict[str, Any]]) -> None:
         """Where the work happens. Often not the client, and both are kept."""
