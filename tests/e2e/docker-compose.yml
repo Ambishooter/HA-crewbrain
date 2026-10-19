@@ -1,0 +1,42 @@
+# End-to-end test against a stand-in CrewBrain. Never reaches the real one:
+# the CrewBrain host names below are network aliases of the stand-in.
+#
+#   docker compose -f tests/e2e/docker-compose.yml up --abort-on-container-exit --exit-code-from runner
+#   docker compose -f tests/e2e/docker-compose.yml down -v
+name: crewbrain-e2e
+
+services:
+  mock:
+    image: python:3.12-slim
+    command: ["python", "-u", "/e2e/mock_crewbrain.py"]
+    volumes:
+      - ./mock_crewbrain.py:/e2e/mock_crewbrain.py:ro
+    networks:
+      default:
+        aliases:
+          - example.crewbrain.com
+          - example.eu2.crewbrain.com
+          - evil.example
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:${HA_VERSION:-stable}
+    environment:
+      TZ: Europe/Berlin
+    volumes:
+      - ./configuration.yaml:/config/configuration.yaml:ro
+      - ../../custom_components/crewbrain:/config/custom_components/crewbrain:ro
+      # Shared with the runner, which checks the password is never stored.
+      - storage:/config/.storage
+    depends_on: [mock]
+
+  runner:
+    image: python:3.12-slim
+    command: ["python", "-u", "/e2e/run.py"]
+    volumes:
+      - ./run.py:/e2e/run.py:ro
+      - ../../custom_components/crewbrain:/component:ro
+      - storage:/storage:ro
+    depends_on: [homeassistant]
+
+volumes:
+  storage:

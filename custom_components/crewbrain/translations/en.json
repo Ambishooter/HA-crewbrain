@@ -1,0 +1,103 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect CrewBrain",
+        "data": {
+          "url": "CrewBrain address",
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "url": "The part before .crewbrain.com, or the full address.",
+          "password": "Used once to get an access token. Not stored."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in to CrewBrain again",
+        "description": "CrewBrain no longer accepts the access token for {name}.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "password": "Used once to get an access token. Not stored."
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Not a CrewBrain address.",
+      "invalid_auth": "CrewBrain refused the username or password.",
+      "no_employee": "CrewBrain did not say which employee this login belongs to.",
+      "cannot_connect": "CrewBrain could not be reached.",
+      "unknown": "Unexpected error. See the log."
+    },
+    "abort": {
+      "already_configured": "This CrewBrain account is already set up.",
+      "reauth_successful": "Signed in again.",
+      "wrong_account": "This login belongs to a different employee."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CrewBrain options",
+        "data": {
+          "days_ahead": "Days of jobs to show ahead",
+          "activity": "Activity text on a clock-in",
+          "category": "Time category on a clock-in"
+        },
+        "data_description": {
+          "days_ahead": "Every job in this window costs one request each half hour, to read its crew.",
+          "activity": "Written into the record's Activity field when no note is given."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "clocked_in": { "name": "Clocked in" }
+    },
+    "sensor": {
+      "clocked_in_since": { "name": "Clocked in since" },
+      "worked_today": { "name": "Worked today" },
+      "next_job": { "name": "Next job" }
+    },
+    "switch": {
+      "punch_clock": { "name": "Punch clock" }
+    },
+    "calendar": {
+      "jobs": { "name": "Jobs" }
+    }
+  },
+  "exceptions": {
+    "already_clocked_in": { "message": "You are already clocked in, since {since}." },
+    "not_clocked_in": { "message": "You are not clocked in." },
+    "multiple_open": { "message": "{count} records are open in CrewBrain. Someone has to look at them there." },
+    "end_before_start": { "message": "The end time is before the start, {since}." },
+    "no_category": { "message": "No time category is set. Choose one in the CrewBrain options." },
+    "auth_failed": { "message": "CrewBrain refused the access token. Sign in again under Settings, Devices and services." },
+    "api_error": { "message": "CrewBrain request failed: {error}" },
+    "no_entry": { "message": "No CrewBrain account is set up and loaded." },
+    "choose_entry": { "message": "More than one CrewBrain account is set up. Choose one." }
+  },
+  "services": {
+    "clock_in": {
+      "name": "Clock in",
+      "description": "Starts a working-hours record in CrewBrain. Refuses if one is already running.",
+      "fields": {
+        "config_entry_id": { "name": "Account", "description": "Only needed with more than one CrewBrain account." },
+        "time": { "name": "Time", "description": "Start time, if not now. Without a time zone it is read as Home Assistant's." },
+        "note": { "name": "Note", "description": "Written into the record's Activity field." }
+      }
+    },
+    "clock_out": {
+      "name": "Clock out",
+      "description": "Puts an end time on the running record in CrewBrain. Refuses if none is running.",
+      "fields": {
+        "config_entry_id": { "name": "Account", "description": "Only needed with more than one CrewBrain account." },
+        "time": { "name": "Time", "description": "End time, if not now. Without a time zone it is read as Home Assistant's." }
+      }
+    }
+  }
+}

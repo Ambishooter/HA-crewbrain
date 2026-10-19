@@ -1,0 +1,39 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1"
+
+jobs:
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      # The HACS action validates public repositories only.
+      - name: Repository visibility
+        id: visibility
+        run: echo "private=$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - if: steps.visibility.outputs.private == 'false'
+        uses: hacs/action@main
+        with:
+          category: integration
+          ignore: brands
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: End-to-end test against the stand-in CrewBrain
+        run: docker compose -f tests/e2e/docker-compose.yml up --abort-on-container-exit --exit-code-from runner
+      - name: Clean up
+        if: always()
+        run: docker compose -f tests/e2e/docker-compose.yml down -v

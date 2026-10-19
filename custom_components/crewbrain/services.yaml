@@ -1,0 +1,30 @@
+clock_in:
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: crewbrain
+    time:
+      required: false
+      example: "2026-10-19 08:00:00"
+      selector:
+        datetime:
+    note:
+      required: false
+      example: "Site visit"
+      selector:
+        text:
+
+clock_out:
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: crewbrain
+    time:
+      required: false
+      example: "2026-10-19 16:30:00"
+      selector:
+        datetime:

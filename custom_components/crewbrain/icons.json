@@ -1,0 +1,28 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "clocked_in": {
+        "default": "mdi:account-clock",
+        "state": { "off": "mdi:account-clock-outline" }
+      }
+    },
+    "sensor": {
+      "clocked_in_since": { "default": "mdi:clock-start" },
+      "worked_today": { "default": "mdi:timer-sand" },
+      "next_job": { "default": "mdi:briefcase-clock" }
+    },
+    "switch": {
+      "punch_clock": {
+        "default": "mdi:clock-check",
+        "state": { "off": "mdi:clock-outline" }
+      }
+    },
+    "calendar": {
+      "jobs": { "default": "mdi:briefcase-variant" }
+    }
+  },
+  "services": {
+    "clock_in": { "service": "mdi:clock-start" },
+    "clock_out": { "service": "mdi:clock-end" }
+  }
+}

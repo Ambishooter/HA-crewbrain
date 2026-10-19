@@ -1,0 +1,103 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "CrewBrain verbinden",
+        "data": {
+          "url": "CrewBrain-Adresse",
+          "username": "Benutzername",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "url": "Der Teil vor .crewbrain.com, oder die ganze Adresse.",
+          "password": "Nur zum Abholen eines Zugriffstokens. Wird nicht gespeichert."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Neu bei CrewBrain anmelden",
+        "description": "CrewBrain nimmt das Zugriffstoken für {name} nicht mehr an.",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "password": "Nur zum Abholen eines Zugriffstokens. Wird nicht gespeichert."
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Das ist keine CrewBrain-Adresse.",
+      "invalid_auth": "CrewBrain hat Benutzername oder Passwort abgelehnt.",
+      "no_employee": "CrewBrain hat nicht gesagt, zu welchem Mitarbeiter diese Anmeldung gehört.",
+      "cannot_connect": "CrewBrain ist nicht erreichbar.",
+      "unknown": "Unerwarteter Fehler. Siehe Protokoll."
+    },
+    "abort": {
+      "already_configured": "Dieses CrewBrain-Konto ist schon eingerichtet.",
+      "reauth_successful": "Neu angemeldet.",
+      "wrong_account": "Diese Anmeldung gehört zu einem anderen Mitarbeiter."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CrewBrain-Optionen",
+        "data": {
+          "days_ahead": "Tage, für die Jobs angezeigt werden",
+          "activity": "Tätigkeit beim Einstempeln",
+          "category": "Zeitkategorie beim Einstempeln"
+        },
+        "data_description": {
+          "days_ahead": "Jeder Job in diesem Zeitraum kostet alle halbe Stunde eine Anfrage, um seine Besetzung zu lesen.",
+          "activity": "Steht im Feld Activity des Eintrags, wenn keine Notiz angegeben ist."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "clocked_in": { "name": "Eingestempelt" }
+    },
+    "sensor": {
+      "clocked_in_since": { "name": "Eingestempelt seit" },
+      "worked_today": { "name": "Heute gearbeitet" },
+      "next_job": { "name": "Nächster Job" }
+    },
+    "switch": {
+      "punch_clock": { "name": "Stempeluhr" }
+    },
+    "calendar": {
+      "jobs": { "name": "Jobs" }
+    }
+  },
+  "exceptions": {
+    "already_clocked_in": { "message": "Du bist schon eingestempelt, seit {since}." },
+    "not_clocked_in": { "message": "Du bist gerade nicht eingestempelt." },
+    "multiple_open": { "message": "In CrewBrain sind {count} Einträge offen. Das muss sich jemand dort ansehen." },
+    "end_before_start": { "message": "Das Ende liegt vor dem Beginn um {since}." },
+    "no_category": { "message": "Keine Zeitkategorie gewählt. Wähle eine in den CrewBrain-Optionen." },
+    "auth_failed": { "message": "CrewBrain hat das Zugriffstoken abgelehnt. Melde dich unter Einstellungen, Geräte & Dienste neu an." },
+    "api_error": { "message": "Anfrage an CrewBrain fehlgeschlagen: {error}" },
+    "no_entry": { "message": "Kein CrewBrain-Konto ist eingerichtet und geladen." },
+    "choose_entry": { "message": "Mehr als ein CrewBrain-Konto ist eingerichtet. Wähle eines aus." }
+  },
+  "services": {
+    "clock_in": {
+      "name": "Einstempeln",
+      "description": "Beginnt einen Arbeitszeit-Eintrag in CrewBrain. Bricht ab, wenn schon einer läuft.",
+      "fields": {
+        "config_entry_id": { "name": "Konto", "description": "Nur nötig bei mehr als einem CrewBrain-Konto." },
+        "time": { "name": "Zeit", "description": "Beginn, wenn nicht jetzt. Ohne Zeitzone gilt die von Home Assistant." },
+        "note": { "name": "Notiz", "description": "Steht im Feld Activity des Eintrags." }
+      }
+    },
+    "clock_out": {
+      "name": "Ausstempeln",
+      "description": "Setzt ein Ende auf den laufenden Eintrag in CrewBrain. Bricht ab, wenn keiner läuft.",
+      "fields": {
+        "config_entry_id": { "name": "Konto", "description": "Nur nötig bei mehr als einem CrewBrain-Konto." },
+        "time": { "name": "Zeit", "description": "Ende, wenn nicht jetzt. Ohne Zeitzone gilt die von Home Assistant." }
+      }
+    }
+  }
+}
