@@ -7,6 +7,7 @@ stand-in CrewBrain in mock_crewbrain.py. Standard library only.
 
 import base64
 import json
+import math
 import os
 import re
 import socket
@@ -214,6 +215,13 @@ def seconds_within(start, end, lo, hi):
     return max(0.0, (min(end, hi) - max(start, lo)).total_seconds())
 
 
+def shown_minutes(entity):
+    """Minutes as the frontend shows a duration in hours: h and floor(min)."""
+    hours = float(entity["state"])
+    whole = math.floor(hours)
+    return whole * 60 + math.floor((hours - whole) * 60)
+
+
 def main():
     global TOKEN, WS
     wait("Home Assistant", lambda: call("GET", f"{HA}/api/onboarding", auth=False)[0] == 200, 300)
@@ -301,9 +309,10 @@ def main():
     check("config: username kept for signing in again", data.get("username") == USERNAME, data)
 
     p = "crewbrain_test_person"
-    e = {k: f"{d}.{p}_{k}" for d, k in [("binary_sensor", "clocked_in"), ("sensor", "clocked_in_since"),
-                                        ("sensor", "worked_today"), ("sensor", "next_job"),
-                                        ("switch", "punch_clock"), ("calendar", "jobs")]}
+    e = {k: f"{d}.{p}_{name}" for d, k, name in [
+        ("binary_sensor", "clocked_in", "status"), ("sensor", "clocked_in_since", "clocked_in_since"),
+        ("sensor", "worked_today", "worked_today"), ("sensor", "next_job", "next_job"),
+        ("switch", "punch_clock", "punch_clock"), ("calendar", "jobs", "jobs")]}
     print("entities:", sorted(e.values()))
 
     polling_mark = log_mark()
@@ -334,9 +343,12 @@ def main():
     s = states()
     check("not clocked in", s[e["clocked_in"]]["state"] == "off", s[e["clocked_in"]])
     check("switch off", s[e["punch_clock"]]["state"] == "off", s[e["punch_clock"]])
-    check("since unknown", s[e["clocked_in_since"]]["state"] == "unknown", s[e["clocked_in_since"]])
+    check("since: not clocked in, not unknown", s[e["clocked_in_since"]]["state"] == "not_clocked_in"
+          and s[e["clocked_in_since"]]["attributes"].get("since") is None, s[e["clocked_in_since"]])
     check(f"worked today {worked} min, last night's part after midnight included",
-          s[e["worked_today"]]["state"] == str(worked), s[e["worked_today"]])
+          shown_minutes(s[e["worked_today"]]) == worked, s[e["worked_today"]])
+    check("worked today in hours", s[e["worked_today"]]["attributes"].get("unit_of_measurement") == "h",
+          s[e["worked_today"]]["attributes"])
     nxt = s[e["next_job"]]
     titles = [j["title"] for j in nxt["attributes"].get("upcoming", [])]
     check("next job is the running one", nxt["attributes"].get("title") == "D mine running", nxt["attributes"].get("title"))
@@ -384,7 +396,11 @@ def main():
     s = states()
     check("clocked in now", s[e["clocked_in"]]["state"] == "on" and s[e["punch_clock"]]["state"] == "on",
           (s[e["clocked_in"]]["state"], s[e["punch_clock"]]["state"]))
-    check("since is set", s[e["clocked_in_since"]]["state"] not in ("unknown", "unavailable"), s[e["clocked_in_since"]])
+    since = s[e["clocked_in_since"]]
+    check("since: the local time, the moment in the attribute",
+          re.fullmatch(r"\d\d:\d\d|\d{4}-\d\d-\d\d \d\d:\d\d", since["state"])
+          and datetime.fromisoformat(since["attributes"].get("since") or "x").astimezone(LOCAL).strftime("%H:%M")
+          == since["state"][-5:], since)
 
     mark = log_mark()
     r = service("switch", "turn_on", {"entity_id": e["punch_clock"]})
@@ -404,7 +420,7 @@ def main():
     check("switch off: PUT on the open record", writes and re.fullmatch(r"/api/v2/workinghours/\d+", writes[0]["path"]), writes)
     s = states()
     check("clocked out", s[e["clocked_in"]]["state"] == "off" and s[e["punch_clock"]]["state"] == "off")
-    check("worked today still counted", int(s[e["worked_today"]]["state"]) >= worked, s[e["worked_today"]])
+    check("worked today still counted", shown_minutes(s[e["worked_today"]]) >= worked, s[e["worked_today"]])
 
     r = service("switch", "turn_off", {"entity_id": e["punch_clock"]})
     check("switch off twice: refused", r[0] == 400 and "not clocked in" in message(r), r)
@@ -538,6 +554,18 @@ def main():
     en = json.loads(Path("/component/translations/en.json").read_text(encoding="utf-8"))
     de = json.loads(Path("/component/translations/de.json").read_text(encoding="utf-8"))
     check("translations: de has the same keys as en", keys(en) == keys(de), keys(en) ^ keys(de))
+    served = (WS.command("frontend/get_translations", language="de", category="entity",
+                         integration=["crewbrain"]) or {}).get("resources", {})
+    wanted = {
+        "binary_sensor.clocked_in.name": "Status",
+        "binary_sensor.clocked_in.state.off": "Ausgestempelt",
+        "sensor.clocked_in_since.state.not_clocked_in": "Nicht eingestempelt",
+        "switch.punch_clock.state.on": "Eingestempelt",
+        "calendar.jobs.state.off": "Kein Job",
+    }
+    check("translations: the states' German wording is served to the frontend",
+          all(served.get(f"component.crewbrain.entity.{k}") == v for k, v in wanted.items()),
+          {k: served.get(f"component.crewbrain.entity.{k}") for k in wanted})
 
     _, log = call("GET", f"{HA}/api/error_log")
     log = log if isinstance(log, str) else ""

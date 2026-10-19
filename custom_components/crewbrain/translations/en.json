@@ -56,18 +56,30 @@
   },
   "entity": {
     "binary_sensor": {
-      "clocked_in": { "name": "Clocked in" }
+      "clocked_in": {
+        "name": "Status",
+        "state": { "on": "Clocked in", "off": "Clocked out" }
+      }
     },
     "sensor": {
-      "clocked_in_since": { "name": "Clocked in since" },
+      "clocked_in_since": {
+        "name": "Clocked in since",
+        "state": { "not_clocked_in": "Not clocked in" }
+      },
       "worked_today": { "name": "Worked today" },
       "next_job": { "name": "Next job" }
     },
     "switch": {
-      "punch_clock": { "name": "Punch clock" }
+      "punch_clock": {
+        "name": "Punch clock",
+        "state": { "on": "Clocked in", "off": "Clocked out" }
+      }
     },
     "calendar": {
-      "jobs": { "name": "Jobs" }
+      "jobs": {
+        "name": "Jobs",
+        "state": { "on": "Job running", "off": "No job running" }
+      }
     }
   },
   "exceptions": {

@@ -31,11 +31,11 @@ clock-in is booked into, and the activity text it writes.
 | Entity | |
 |---|---|
 | `switch` Punch clock | On while you are clocked in. On clocks in, off clocks out. |
-| `binary_sensor` Clocked in | The same, read-only. |
-| `sensor` Clocked in since | When the running record started. |
-| `sensor` Worked today | Minutes booked today. |
+| `binary_sensor` Status | Clocked in or clocked out, read-only. |
+| `sensor` Clocked in since | The clock-in time, or "Not clocked in". The exact moment is in the `since` attribute. |
+| `sensor` Worked today | Hours and minutes booked today. |
 | `sensor` Next job | The next job that is not over yet, with the ones after it as attributes. |
-| `calendar` Jobs | Your jobs. |
+| `calendar` Jobs | Your jobs. On while one is running; its attributes show the current or next one. |
 
 ## Actions
 

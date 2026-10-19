@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
+from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -21,9 +21,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CrewBrainConfigEntry,
 
 
 class ClockedIn(CrewBrainEntity[ClockCoordinator], BinarySensorEntity):
-    """On while a record is running."""
-
-    _attr_device_class = BinarySensorDeviceClass.RUNNING
+    """On while a record is running. Shown as clocked in or out."""
 
     @property
     def is_on(self) -> bool:

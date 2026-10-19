@@ -7,7 +7,10 @@
       }
     },
     "sensor": {
-      "clocked_in_since": { "default": "mdi:clock-start" },
+      "clocked_in_since": {
+        "default": "mdi:clock-start",
+        "state": { "not_clocked_in": "mdi:clock-outline" }
+      },
       "worked_today": { "default": "mdi:timer-sand" },
       "next_job": { "default": "mdi:briefcase-clock" }
     },

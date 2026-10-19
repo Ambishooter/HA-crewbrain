@@ -56,18 +56,30 @@
   },
   "entity": {
     "binary_sensor": {
-      "clocked_in": { "name": "Eingestempelt" }
+      "clocked_in": {
+        "name": "Status",
+        "state": { "on": "Eingestempelt", "off": "Ausgestempelt" }
+      }
     },
     "sensor": {
-      "clocked_in_since": { "name": "Eingestempelt seit" },
+      "clocked_in_since": {
+        "name": "Eingestempelt seit",
+        "state": { "not_clocked_in": "Nicht eingestempelt" }
+      },
       "worked_today": { "name": "Heute gearbeitet" },
       "next_job": { "name": "Nächster Job" }
     },
     "switch": {
-      "punch_clock": { "name": "Stempeluhr" }
+      "punch_clock": {
+        "name": "Stempeluhr",
+        "state": { "on": "Eingestempelt", "off": "Ausgestempelt" }
+      }
     },
     "calendar": {
-      "jobs": { "name": "Jobs" }
+      "jobs": {
+        "name": "Jobs",
+        "state": { "on": "Job läuft", "off": "Kein Job" }
+      }
     }
   },
   "exceptions": {

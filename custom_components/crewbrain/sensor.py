@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
 #: Jobs listed in the next-job sensor's `upcoming` attribute.
 UPCOMING = 20
+#: The clocked-in-since state while not clocked in; translated for display.
+NOT_CLOCKED_IN = "not_clocked_in"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CrewBrainConfigEntry,
@@ -33,30 +35,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: CrewBrainConfigEntry,
 
 
 class ClockedInSince(CrewBrainEntity[ClockCoordinator], SensorEntity):
-    """When the running record started. Unknown when none is running."""
+    """When the running record started, as text a person reads.
 
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    Text rather than a timestamp, because a timestamp sensor shows "unknown"
+    while nobody is clocked in. The `since` attribute keeps the moment for
+    automations.
+    """
 
     @property
-    def native_value(self) -> datetime | None:
-        return self.coordinator.data.since
+    def native_value(self) -> str | None:
+        state = self.coordinator.data
+        if not state.clocked_in:
+            return NOT_CLOCKED_IN
+        if state.since is None:  # several records open: no single start
+            return None
+        since = dt_util.as_local(state.since)
+        today = since.date() == dt_util.now().date()
+        return since.strftime("%H:%M" if today else "%Y-%m-%d %H:%M")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        since = self.coordinator.data.since
+        return {"since": since.isoformat() if since else None}
 
 
 class WorkedToday(CrewBrainEntity[ClockCoordinator], SensorEntity):
-    """Minutes booked today, a running record counted up to the last poll.
+    """Time booked today, a running record counted up to the last poll.
 
     Computed from each record's timestamps, not from CrewBrain's `Duration`.
     A record that spans midnight counts only its part within today.
+
+    In hours, because the frontend shows hours as hours and minutes. It
+    takes the minutes as floor((hours - whole hours) * 60), and an exact
+    7 h 35 min in floating point comes out as 34.99... and shows a minute
+    short. Half a second more is never a minute more, and fixes that.
     """
 
     _attr_device_class = SensorDeviceClass.DURATION
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_native_unit_of_measurement = UnitOfTime.HOURS
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_suggested_display_precision = 0
 
     @property
-    def native_value(self) -> int:
-        return self.coordinator.data.worked_today
+    def native_value(self) -> float:
+        minutes = self.coordinator.data.worked_today
+        return round(minutes / 60 + 1 / 7200, 4) if minutes else 0
 
 
 class NextJob(CrewBrainEntity[JobsCoordinator], SensorEntity):
