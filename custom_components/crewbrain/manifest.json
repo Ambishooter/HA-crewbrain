@@ -1,7 +1,6 @@
 {
   "domain": "crewbrain",
   "name": "CrewBrain",
-  "categories": ["productivity_information.calendars_todos"],
   "codeowners": ["@Ambishooter"],
   "config_flow": true,
   "documentation": "https://github.com/Ambishooter/HA-crewbrain",
