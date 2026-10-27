@@ -770,6 +770,22 @@ def main():
     check("log: token never logged", "test:key" not in log and "new:key" not in log)
     check("log: password never logged", PASSWORD not in log and "still wrong" not in log)
 
+    # -- the integration's own icon (Home Assistant 2026.3 and later) ----------------
+    version = (call("GET", f"{HA}/api/config")[1] or {}).get("version", "0")
+    if tuple(int(n) for n in re.findall(r"\d+", version)[:2]) >= (2026, 3):
+        token = (WS.command("brands/access_token") or {}).get("token", "")
+        for name in ("icon.png", "dark_icon.png"):
+            url = f"{HA}/api/brands/integration/crewbrain/{name}?token={urllib.parse.quote(token)}"
+            try:
+                with urllib.request.urlopen(url, timeout=30) as response:
+                    served = response.read()
+            except urllib.error.HTTPError as err:
+                served = f"HTTP {err.code}".encode()
+            ours = Path(f"/component/brand/{name}").read_bytes()
+            check(f"brand: Home Assistant serves our {name}", served == ours, served[:40])
+    else:
+        print(f"(Home Assistant {version} has no local brand images; icon not checked)")
+
     print(f"\n{len(FAILED)} failed" if FAILED else "\nall passed")
     return 1 if FAILED else 0
 
