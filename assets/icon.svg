@@ -1,13 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <!-- The CrewBrain integration's icon: a clock whose hands make a check mark. -->
-  <circle cx="128" cy="128" r="128" fill="#17768A"/>
-  <circle cx="128" cy="128" r="104" fill="none" stroke="#FFFFFF" stroke-width="12"/>
-  <g stroke="#FFFFFF" stroke-width="10" stroke-linecap="round">
-    <line x1="128" y1="40" x2="128" y2="54"/>
-    <line x1="216" y1="128" x2="202" y2="128"/>
-    <line x1="128" y1="216" x2="128" y2="202"/>
-    <line x1="40" y1="128" x2="54" y2="128"/>
+  <!-- The CrewBrain integration's icon: a clock whose hands make a check mark,
+       in gold on a dark tile. -->
+  <defs>
+    <radialGradient id="tile" cx="50%" cy="50%" r="70%">
+      <stop offset="0" stop-color="#2A241A"/>
+      <stop offset="1" stop-color="#0E0C09"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#C9A04E" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#C9A04E" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Across the whole icon: a gradient per shape can't paint a straight line. -->
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="40" y1="40" x2="216" y2="216">
+      <stop offset="0" stop-color="#F3DA92"/>
+      <stop offset="0.5" stop-color="#C9A04E"/>
+      <stop offset="1" stop-color="#8C6A2E"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#tile)"/>
+  <circle cx="128" cy="128" r="110" fill="url(#glow)"/>
+  <g fill="none" stroke="url(#gold)" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="128" cy="128" r="84" stroke-width="9"/>
+    <g stroke-width="8">
+      <line x1="128" y1="58" x2="128" y2="70"/>
+      <line x1="198" y1="128" x2="186" y2="128"/>
+      <line x1="128" y1="198" x2="128" y2="186"/>
+      <line x1="58" y1="128" x2="70" y2="128"/>
+    </g>
+    <polyline points="96,128 119,151 162,100" stroke-width="15"/>
   </g>
-  <polyline points="86,128 116,158 174,90" fill="none" stroke="#FFFFFF"
-            stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
