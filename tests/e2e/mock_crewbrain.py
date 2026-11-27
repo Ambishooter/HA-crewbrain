@@ -32,6 +32,8 @@ STATE = {
     "records": [],
     "events": [],
     "crew": {},
+    #: Event ID -> rows of /workinghourEmployees, where it differs from the crew.
+    "wh_employees": {},
     "clients": {},
     "locations": {},
     "categories": [],
@@ -160,6 +162,17 @@ class Handler(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/v2/events/(\d+)/resources", path)
         if m and method == "GET":
             return self._send(200, {"data": STATE["crew"].get(m.group(1), [])})
+        m = re.fullmatch(r"/api/v2/events/(\d+)/workinghourEmployees", path)
+        if m and method == "GET":
+            # Who can book hours on a job. Its AssignmentID is its own, unlike
+            # the job's ID or the crew row's.
+            if m.group(1) in STATE["wh_employees"]:
+                return self._send(200, {"data": STATE["wh_employees"][m.group(1)]})
+            rows = [{"AssignmentID": 10000 + r["ID"], "EmployeeID": r["AssignmentID"],
+                     "Name": r.get("Name", ""), "Type": "EMPLOYEE"}
+                    for r in STATE["crew"].get(m.group(1), [])
+                    if r.get("Assignment") == "EMPLOYEE" and not r.get("Deleted")]
+            return self._send(200, {"data": rows})
         m = re.fullmatch(r"/api/v2/clients/(\d+)", path)
         if m and method == "GET" and m.group(1) in STATE["clients"]:
             return self._send(200, {"data": [{"Name": STATE["clients"][m.group(1)]}]})
@@ -206,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
         data = json.loads(body) if body else {}
         if path == "/__seed":
             STATE.update({k: data[k] for k in
-                          ("records", "events", "crew", "clients", "locations", "categories",
+                          ("records", "events", "crew", "wh_employees", "clients", "locations", "categories",
                            "roles", "account", "absences", "absence_kinds", "staff")
                           if k in data})
         elif path == "/__two_open":

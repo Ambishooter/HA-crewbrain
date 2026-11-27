@@ -44,13 +44,11 @@
         "title": "CrewBrain-Optionen",
         "data": {
           "days_ahead": "Tage, für die Jobs angezeigt werden",
-          "activity": "Tätigkeit beim Einstempeln",
           "category": "Zeitkategorie beim Einstempeln",
           "stand_in": "Vertretung bei Abwesenheitsanträgen"
         },
         "data_description": {
-          "days_ahead": "Jeder Job in diesem Zeitraum kostet alle halbe Stunde eine Anfrage, um seine Besetzung zu lesen.",
-          "activity": "Steht im Feld Activity des Eintrags, wenn keine Notiz angegeben ist."
+          "days_ahead": "Jeder Job in diesem Zeitraum kostet alle halbe Stunde eine Anfrage, um seine Besetzung zu lesen."
         }
       }
     }
@@ -70,6 +68,19 @@
       "worked_today": { "name": "Heute gearbeitet" },
       "next_job": { "name": "Nächster Job" },
       "vacation_left": { "name": "Urlaubstage übrig" }
+    },
+    "select": {
+      "clock_in_job": {
+        "name": "Job beim Einstempeln",
+        "state": { "auto": "Automatisch", "none": "Ohne Job" },
+        "state_attributes": {
+          "job_id": { "name": "Job-ID" },
+          "automatic_job": { "name": "Automatisch gewählt" }
+        }
+      }
+    },
+    "text": {
+      "activity": { "name": "Tätigkeit beim Einstempeln" }
     },
     "switch": {
       "punch_clock": {
@@ -103,7 +114,9 @@
     "auth_failed": { "message": "CrewBrain hat das Zugriffstoken abgelehnt. Melde dich unter Einstellungen, Geräte & Dienste neu an." },
     "api_error": { "message": "Anfrage an CrewBrain fehlgeschlagen: {error}" },
     "no_entry": { "message": "Kein CrewBrain-Konto ist eingerichtet und geladen." },
-    "choose_entry": { "message": "Mehr als ein CrewBrain-Konto ist eingerichtet. Wähle eines aus." }
+    "choose_entry": { "message": "Mehr als ein CrewBrain-Konto ist eingerichtet. Wähle eines aus." },
+    "not_on_job": { "message": "Du bist in CrewBrain nicht in der Crew dieses Jobs." },
+    "unknown_job": { "message": "„{job}“ ist keiner deiner kommenden Jobs. Möglich sind auto, none oder die ID eines Jobs, der noch nicht vorbei ist." }
   },
   "services": {
     "clock_in": {
@@ -112,7 +125,8 @@
       "fields": {
         "config_entry_id": { "name": "Konto", "description": "Nur nötig bei mehr als einem CrewBrain-Konto." },
         "time": { "name": "Zeit", "description": "Beginn, wenn nicht jetzt. Ohne Zeitzone gilt die von Home Assistant." },
-        "note": { "name": "Notiz", "description": "Steht im Feld Activity des Eintrags." }
+        "note": { "name": "Tätigkeit", "description": "Für diesen einen Eintrag, statt der in Home Assistant eingestellten. Leer schreibt keine." },
+        "job": { "name": "Job", "description": "auto (läuft gerade oder beginnt innerhalb einer Stunde), none (ohne Job) oder die ID eines Jobs. Ohne Angabe gilt die Auswahl in Home Assistant." }
       }
     },
     "clock_out": {

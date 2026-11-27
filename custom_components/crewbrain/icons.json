@@ -15,6 +15,15 @@
       "next_job": { "default": "mdi:briefcase-clock" },
       "vacation_left": { "default": "mdi:beach" }
     },
+    "select": {
+      "clock_in_job": {
+        "default": "mdi:briefcase-check",
+        "state": { "auto": "mdi:briefcase-search", "none": "mdi:briefcase-off-outline" }
+      }
+    },
+    "text": {
+      "activity": { "default": "mdi:text-short" }
+    },
     "switch": {
       "punch_clock": {
         "default": "mdi:clock-check",

@@ -33,9 +33,11 @@ import aiohttp
 from yarl import URL
 
 from .const import (
+    ACTIVITY_MAX,
     CAPTURE_MODE,
     EVENTS_LIMIT,
     INDEPENDENT,
+    ON_JOB,
     STAMP,
 )
 
@@ -406,30 +408,51 @@ class CrewBrainApi:
             raise CrewBrainStateError("multiple_open", count=len(rows))
         return rows[0] if rows else None
 
+    async def job_assignment(self, job_id: int) -> int:
+        """This employee's place in a job's crew: what a booking on it names.
+
+        Not the job's ID, and not the resource ID from `/resources`. Refused
+        when this employee is not on the job. This, and `JOBEMPLOYEE`, come
+        from CrewBrain's API spec; unlike the rest, not yet seen live.
+        """
+        rows = _rows(await self._request(
+            "GET", f"/v2/events/{job_id}/workinghourEmployees"))
+        for row in rows:
+            if row.get("EmployeeID") == self.employee_id and row.get("AssignmentID"):
+                return int(row["AssignmentID"])
+        raise CrewBrainStateError("not_on_job")
+
     async def clock_in(self, when: datetime | None, activity: str,
-                       category_id: int) -> dict[str, Any]:
+                       category_id: int, job_id: int | None = None) -> dict[str, Any]:
         """Start a record, but only if none is running.
 
-        Booked as independent time (`AssignmentID: 0`), which the live
-        instance accepts. `CaptureMode` is always `API`: whether CrewBrain
-        treats an API entry like its own app is for its administration to
-        decide, not for this code to work around.
+        Without a job, booked as independent time (`AssignmentID: 0`), which
+        the live instance accepts. With one, on this employee's place in its
+        crew. An empty activity is left out, as in CrewBrain's own app.
+        `CaptureMode` is always `API`: whether CrewBrain treats an API entry
+        like its own app is for its administration to decide, not for this
+        code to work around.
         """
         async with self._punch:
             running = await self.open_stamp()
             if running is not None:
                 raise CrewBrainStateError("already_clocked_in", record=running)
+            assignment = (ON_JOB, await self.job_assignment(job_id)) if job_id \
+                else (INDEPENDENT, 0)
             began = when or datetime.now(UTC)
-            created = await self._request("POST", "/v2/workinghours", body={
+            body: dict[str, Any] = {
                 "EmployeeID": self.employee_id,
-                "Assignment": INDEPENDENT,
-                "AssignmentID": 0,
+                "Assignment": assignment[0],
+                "AssignmentID": assignment[1],
                 "Type": "ACTUAL",
                 "CategoryID": category_id,
                 "DateFrom": format_stamp(began),
                 "CaptureMode": CAPTURE_MODE,
-                "Activity": activity,
-            })
+            }
+            activity = activity.strip()[:ACTIVITY_MAX]
+            if activity:
+                body["Activity"] = activity
+            created = await self._request("POST", "/v2/workinghours", body=body)
             # Read back: what counts is what CrewBrain stored.
             stamp = await self.open_stamp()
         _LOGGER.info("CrewBrain: clocked in, record %s",

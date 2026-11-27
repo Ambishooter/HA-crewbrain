@@ -23,14 +23,16 @@ The password is used once, to get an access token from CrewBrain, and is not
 stored. The token stays valid while it is in use. If CrewBrain stops
 accepting it, Home Assistant asks you to sign in again.
 
-**Options:** how many days of jobs to show ahead, the time category a
-clock-in is booked into, and the activity text it writes.
+**Options:** how many days of jobs to show ahead, and the time category a
+clock-in is booked into.
 
 ## Entities
 
 | Entity | |
 |---|---|
 | `switch` Punch clock | On while you are clocked in. On clocks in, off clocks out. |
+| `select` Job to clock in on | **Automatic**, **No job**, or one of your jobs that is not over yet. Kept over restarts. |
+| `text` Clock-in activity | What a clock-in writes as its activity. Empty writes none. Kept over restarts. |
 | `binary_sensor` Status | Clocked in or clocked out, read-only. |
 | `sensor` Clocked in since | The clock-in time, or "Not clocked in". The exact moment is in the `since` attribute. |
 | `sensor` Worked today | Hours and minutes booked today. |
@@ -64,8 +66,9 @@ starts as the one CrewBrain has for you. In automations, use
 action: crewbrain.clock_in
 data:
   time: "2026-10-19 08:00:00"   # optional, default now
-  note: "Site visit"            # optional, the record's activity
-response_variable: result       # {record_id, start, end, minutes}
+  note: "Auto"                  # optional, the activity for this one record
+  job: auto                     # optional: auto, none or a job's ID
+response_variable: result       # {record_id, start, end, minutes, job_id, job}
 ```
 
 ```yaml
@@ -82,7 +85,20 @@ With more than one account set up, add `config_entry_id`.
 - Every clock-in and clock-out reads CrewBrain first. Clocking in while a
   record is running, or out while none is, is refused. So is anything when
   two records are open; fix those in CrewBrain.
-- A clock-in is booked as working time without a job.
+- A clock-in books onto the job chosen in **Job to clock in on**, or the
+  action's `job`:
+  - **Automatic** books onto the job that is running, or else the one that
+    starts within the hour. If two qualify, or none, it books without a job.
+  - **No job** books working time without a job.
+  - A chosen job that is over falls back to **Automatic**.
+- The activity is **Clock-in activity**, or the action's `note` for that one
+  clock-in. To say where a clock-in came from without changing the setting:
+
+  ```yaml
+  action: crewbrain.clock_in
+  data:
+    note: Auto
+  ```
 - The clocked-in state is read every minute, jobs every 30 minutes.
 
 ## Tests

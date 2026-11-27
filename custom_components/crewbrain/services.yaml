@@ -12,7 +12,12 @@ clock_in:
         datetime:
     note:
       required: false
-      example: "Site visit"
+      example: "Auto"
+      selector:
+        text:
+    job:
+      required: false
+      example: "auto"
       selector:
         text:
 

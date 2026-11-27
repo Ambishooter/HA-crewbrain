@@ -277,7 +277,7 @@ def main():
     records = [(900, now - 30 * minute, now - 10 * minute),
                (901, midnight - 60 * minute, midnight + 30 * minute)]
     worked = int(sum(seconds_within(a, b, midnight, midnight + day) for _, a, b in records) // 60)
-    mock("seed", {
+    seed = {
         "records": [{"ID": i, "EmployeeID": 42, "DateFrom": stamp(a), "DateUntil": stamp(b)}
                     for i, a, b in records],
         "events": [{"ID": int(i), "EventIDFormatted": f"J-{i}", "Title": t,
@@ -322,7 +322,8 @@ def main():
             {"ID": 13, "Title": "Driving time", "Assignment": "WORKINGHOURS", "Position": 2},
             {"ID": 12, "Title": "Working hours", "Assignment": "WORKINGHOURS", "Position": 1},
         ],
-    })
+    }
+    mock("seed", seed)
 
     # -- config flow --------------------------------------------------------------
     flows = f"{HA}/api/config/config_entries/flow"
@@ -362,7 +363,8 @@ def main():
         ("binary_sensor", "clocked_in", "status"), ("sensor", "clocked_in_since", "clocked_in_since"),
         ("sensor", "worked_today", "worked_today"), ("sensor", "next_job", "next_job"),
         ("switch", "punch_clock", "punch_clock"), ("calendar", "jobs", "jobs"),
-        ("sensor", "vacation_left", "vacation_days_left"), ("calendar", "absences", "absences")]}
+        ("sensor", "vacation_left", "vacation_days_left"), ("calendar", "absences", "absences"),
+        ("select", "job", "job_to_clock_in_on"), ("text", "activity", "clock_in_activity")]}
     print("entities:", sorted(e.values()))
 
     polling_mark = log_mark()
@@ -543,7 +545,10 @@ def main():
     check("switch on: payload as live", {k: body.get(k) for k in
           ("EmployeeID", "Assignment", "AssignmentID", "Type", "CategoryID", "CaptureMode", "Activity")} == {
           "EmployeeID": 42, "Assignment": "INDEPENDENTHOURS", "AssignmentID": 0, "Type": "ACTUAL",
-          "CategoryID": 12, "CaptureMode": "API", "Activity": "Home Assistant"}, body)
+          "CategoryID": 12, "CaptureMode": "API", "Activity": None}, body)
+    check("switch on: no activity set, none written", "Activity" not in body, body)
+    check("switch on: two jobs running, so automatic books none",
+          not [x for x in requests_since(mark) if "workinghourEmployees" in x["path"]], body)
     check("switch on: DateFrom is UTC now", bool(re.fullmatch(r"\d{8}T\d{6}Z", body.get("DateFrom", "")))
           and abs((datetime.strptime(body["DateFrom"], STAMP).replace(tzinfo=UTC) - datetime.now(UTC)).total_seconds()) < 60,
           body.get("DateFrom"))
@@ -624,6 +629,112 @@ def main():
         check(f"{label}: end sent as UTC", sent.get("DateUntil") == utc_until, sent)
         check(f"{label}: minutes from the timestamps", response.get("minutes") == minutes, response)
 
+    # -- which job, which activity ---------------------------------------------------------
+    def last_post(mark):
+        posts = [x for x in requests_since(mark) if x["method"] == "POST"]
+        return json.loads(posts[-1]["body"]) if posts else {}
+
+    def answer(r):
+        return (r[1] or {}).get("service_response", {}) if isinstance(r[1], dict) else {}
+
+    job = state(e["job"])
+    labels = job.get("attributes", {}).get("options", [])
+    check("job: automatic by default", job.get("state") == "auto", job)
+    check("job: automatic, none, then my jobs not over within the window, in order",
+          labels[:2] == ["auto", "none"]
+          and [x.split(" ", 2)[-1] for x in labels[2:]] == ["D mine running", "G mine without an end", "A mine tomorrow"],
+          labels)
+    check("activity: empty by default, nothing written then", state(e["activity"]).get("state") == "", state(e["activity"]))
+    label_a = next((x for x in labels if x.endswith("A mine tomorrow")), "")
+    check("job: label is the local start and the title",
+          label_a == (now + day).astimezone(LOCAL).strftime("%d.%m. %H:%M") + " A mine tomorrow", label_a)
+
+    # Automatic at a time when one job runs: A, a day ahead, after D has ended.
+    mark = log_mark()
+    at = (now + day + hour).astimezone(LOCAL).strftime("%Y-%m-%d %H:%M:%S")
+    r = service("crewbrain", "clock_in", {"time": at}, response=True)
+    body = last_post(mark)
+    check("automatic: the job running then", r[0] == 200 and answer(r).get("job_id") == 1
+          and answer(r).get("job") == "A mine tomorrow", r)
+    check("automatic: booked on my place in its crew, not the job's or the resource's ID",
+          body.get("Assignment") == "JOBEMPLOYEE" and body.get("AssignmentID") == 15101, body)
+    check("automatic: the crew place read from workinghourEmployees",
+          "/api/v2/events/1/workinghourEmployees" in [x["path"] for x in requests_since(mark)])
+    service("crewbrain", "clock_out", {"time": (now + day + 2 * hour).astimezone(LOCAL).strftime("%Y-%m-%d %H:%M:%S")})
+
+    # A job chosen, and a text set: both used by the switch.
+    r = service("select", "select_option", {"entity_id": e["job"], "option": label_a})
+    check("job: chosen", r[0] == 200 and state(e["job"]).get("state") == label_a
+          and state(e["job"])["attributes"].get("job_id") == 1, state(e["job"]))
+    r = service("text", "set_value", {"entity_id": e["activity"], "value": "Büro"})
+    check("activity: set", r[0] == 200 and state(e["activity"]).get("state") == "Büro", state(e["activity"]))
+    mark = log_mark()
+    service("switch", "turn_on", {"entity_id": e["punch_clock"]})
+    body = last_post(mark)
+    check("switch: on the chosen job, with the activity set",
+          (body.get("Assignment"), body.get("AssignmentID"), body.get("Activity"))
+          == ("JOBEMPLOYEE", 15101, "Büro"), body)
+    service("switch", "turn_off", {"entity_id": e["punch_clock"]})
+
+    # An action's note and job are for that one clock-in.
+    for label, data, expected in [
+        ("note replaces the activity", {"note": "Auto"}, ("JOBEMPLOYEE", 15101, "Auto")),
+        ("an empty note writes none", {"note": ""}, ("JOBEMPLOYEE", 15101, None)),
+        ("job none books without one", {"job": "none"}, ("INDEPENDENTHOURS", 0, "Büro")),
+        ("a job by its ID", {"job": "7"}, ("JOBEMPLOYEE", 15107, "Büro")),
+    ]:
+        mark = log_mark()
+        r = service("crewbrain", "clock_in", data, response=True)
+        body = last_post(mark)
+        check(f"action: {label}", r[0] == 200 and (body.get("Assignment"), body.get("AssignmentID"),
+              body.get("Activity")) == expected, (r, body))
+        service("crewbrain", "clock_out", {})
+    check("action: the settings stay as they were",
+          state(e["job"]).get("state") == label_a and state(e["activity"]).get("state") == "Büro")
+    for label, job_id, wording in [("someone else's job", "2", "not one of your upcoming jobs"),
+                                   ("a job that is over", "6", "not one of your upcoming jobs")]:
+        mark = log_mark()
+        r = service("crewbrain", "clock_in", {"job": job_id})
+        check(f"action: {label} refused, nothing written",
+              r[0] == 400 and wording in message(r)
+              and not [x for x in requests_since(mark) if x["method"] != "GET"], r)
+    mock("seed", {"wh_employees": {"7": [{"AssignmentID": 777, "EmployeeID": 99, "Type": "EMPLOYEE"}]}})
+    mark = log_mark()
+    r = service("crewbrain", "clock_in", {"job": "7"})
+    check("action: not in the job's crew in CrewBrain, refused, nothing written",
+          r[0] == 400 and "not on this job's crew" in message(r)
+          and not [x for x in requests_since(mark) if x["method"] != "GET"], r)
+    mock("seed", {"wh_employees": {}})
+
+    # -- a restart keeps both ------------------------------------------------------------------
+    def up():
+        try:
+            return call("GET", f"{HA}/api/config")[0] == 200
+        except OSError:
+            return False
+
+    try:
+        WS.command_full("call_service", domain="homeassistant", service="restart", service_data={})
+    except (EOFError, OSError, ValueError):
+        pass  # The connection may close before the answer arrives.
+    wait("Home Assistant going down", lambda: not up(), 120)
+    wait("Home Assistant back", up, 300)
+    WS = WebSocket("homeassistant", 8123, TOKEN)
+    wait("entities after the restart", lambda: state(e["job"]).get("state") not in (None, "unavailable"), 120)
+    check("restart: the job chosen is kept", state(e["job"]).get("state") == label_a, state(e["job"]))
+    check("restart: the activity is kept", state(e["activity"]).get("state") == "Büro", state(e["activity"]))
+
+    # -- a chosen job that is over falls back to automatic ------------------------------------------
+    gone = dict(seed, events=[dict(x, Deleted="20260101T000000Z") if x["ID"] == 1 else x
+                              for x in seed["events"]])
+    mock("seed", {"events": gone["events"]})
+    refresh(e["next_job"], "job A gone", lambda: state(e["job"]).get("state") == "auto")
+    check("job over: back to automatic", state(e["job"]).get("state") == "auto"
+          and not any(x.endswith("A mine tomorrow") for x in state(e["job"])["attributes"].get("options", [])),
+          state(e["job"]))
+    mock("seed", {"events": seed["events"]})
+    service("homeassistant", "update_entity", {"entity_id": e["next_job"]})
+
     # -- two open records ---------------------------------------------------------------
     mock("two_open")
     refresh(e["clocked_in"], "two open records shown",
@@ -655,15 +766,18 @@ def main():
           labels == ["—", "Alex Example", "Bea Backup"] and stand.get("default") == "7", stand)
     # The reload this brings meets a company that keeps its staff list closed.
     mock("forbid", {"paths": ["/api/v2/staff"]})
+    check("options: the activity is not an option any more",
+          not [f for f in flow.get("data_schema", []) if f.get("name") == "activity"], flow)
     _, done = call("POST", f"{opts}/{flow['flow_id']}",
-                   {"days_ahead": 30, "activity": "Büro", "category": "13", "stand_in": "none"})
+                   {"days_ahead": 30, "category": "13", "stand_in": "none"})
     check("options: saved", done.get("type") == "create_entry", done)
     wait("reload with 30 days", lambda: "E mine in 20 days" in
          [j["title"] for j in state(e["next_job"])["attributes"].get("upcoming", [])])
     mark = log_mark()
     service("switch", "turn_on", {"entity_id": e["punch_clock"]})
     posts = [json.loads(x["body"]) for x in requests_since(mark) if x["method"] == "POST"]
-    check("options: activity text used", posts and posts[0].get("Activity") == "Büro", posts)
+    check("options: the activity set in Home Assistant survives the reload",
+          posts and posts[0].get("Activity") == "Büro", posts)
     check("options: category used", posts and posts[0].get("CategoryID") == 13, posts)
     service("switch", "turn_off", {"entity_id": e["punch_clock"]})
     _, again = call("POST", opts, {"handler": entry_id})

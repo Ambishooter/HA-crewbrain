@@ -18,12 +18,17 @@ from homeassistant.helpers.typing import ConfigType
 
 from .api import CrewBrainApi, CrewBrainAuthError, CrewBrainError, default_category
 from .const import (
+    ACTIVITY_MAX,
     ATTR_CONFIG_ENTRY_ID,
+    ATTR_JOB,
     ATTR_NOTE,
     ATTR_TIME,
     CONF_BASE_URL,
     CONF_EMPLOYEE_ID,
     DOMAIN,
+    JOB_AUTO,
+    LEGACY_ACTIVITY,
+    OPT_ACTIVITY,
     SERVICE_CLOCK_IN,
     SERVICE_CLOCK_OUT,
 )
@@ -32,7 +37,8 @@ from .punch import async_clock_in, async_clock_out
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.CALENDAR, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.CALENDAR, Platform.SELECT, Platform.SENSOR,
+             Platform.SWITCH, Platform.TEXT]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -53,6 +59,11 @@ class CrewBrainData:
     #: Who can stand in on a time-off request, and CrewBrain's default one.
     colleagues: dict[int, str] = field(default_factory=dict)
     default_stand_in: int | None = None
+    #: What a clock-in writes as its activity, and which job it books on:
+    #: `auto`, `none` or a job's ID. Kept by the text and the select, which
+    #: restore them after a restart.
+    activity: str = ""
+    job_choice: str = JOB_AUTO
 
 
 type CrewBrainConfigEntry = ConfigEntry[CrewBrainData]
@@ -60,7 +71,8 @@ type CrewBrainConfigEntry = ConfigEntry[CrewBrainData]
 _CLOCK_IN_SCHEMA = vol.Schema({
     vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
     vol.Optional(ATTR_TIME): cv.datetime,
-    vol.Optional(ATTR_NOTE): cv.string,
+    vol.Optional(ATTR_NOTE): vol.Any(None, vol.All(cv.string, vol.Length(max=ACTIVITY_MAX))),
+    vol.Optional(ATTR_JOB): cv.string,
 })
 _CLOCK_OUT_SCHEMA = vol.Schema({
     vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
@@ -89,7 +101,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def clock_in(call: ServiceCall) -> ServiceResponse:
         entry = _entry_for(hass, call)
         return await async_clock_in(entry, call.data.get(ATTR_TIME),
-                                    call.data.get(ATTR_NOTE))
+                                    call.data.get(ATTR_NOTE), call.data.get(ATTR_JOB))
 
     async def clock_out(call: ServiceCall) -> ServiceResponse:
         entry = _entry_for(hass, call)
@@ -141,9 +153,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: CrewBrainConfigEntry) ->
         hass=hass, api=api, clock=clock, jobs=jobs, absences=absences,
         categories=categories,
         default_category=default_category(categories),
-        colleagues=colleagues, default_stand_in=default_stand_in)
+        colleagues=colleagues, default_stand_in=default_stand_in,
+        activity=_first_activity(entry))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+def _first_activity(entry: CrewBrainConfigEntry) -> str:
+    """The activity before the text entity has restored its own.
+
+    Earlier versions kept it in the options, with "Home Assistant" as the
+    default. A text someone chose there is carried over; that default is not.
+    """
+    kept = str(entry.options.get(OPT_ACTIVITY) or "").strip()
+    return "" if kept == LEGACY_ACTIVITY else kept
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: CrewBrainConfigEntry) -> bool:

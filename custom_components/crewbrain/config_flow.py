@@ -47,10 +47,8 @@ from .api import (
 from .const import (
     CONF_BASE_URL,
     CONF_EMPLOYEE_ID,
-    DEFAULT_ACTIVITY,
     DEFAULT_DAYS_AHEAD,
     DOMAIN,
-    OPT_ACTIVITY,
     OPT_CATEGORY,
     OPT_DAYS_AHEAD,
     OPT_STAND_IN,
@@ -215,7 +213,7 @@ class CrewBrainConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class CrewBrainOptionsFlow(OptionsFlowWithReload):
-    """How far ahead jobs are shown, and what a clock-in records.
+    """How far ahead jobs are shown, and which category a clock-in books.
 
     Saving reloads the entry. A new token from reauth reloads it too, through
     its own path, so there is no update listener to reload it a second time.
@@ -233,8 +231,6 @@ class CrewBrainOptionsFlow(OptionsFlowWithReload):
                 vol.All(NumberSelector(NumberSelectorConfig(
                     min=1, max=60, step=1, mode=NumberSelectorMode.BOX)),
                     vol.Coerce(int)),
-            vol.Required(OPT_ACTIVITY,
-                         default=options.get(OPT_ACTIVITY, DEFAULT_ACTIVITY)): str,
         }
         # The categories are read when the entry loads. Not loaded, the
         # chosen one is kept as it is.
